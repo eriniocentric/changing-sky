@@ -1,7 +1,12 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Changing Sky — a community explorer of Rubin Observatory alerts</title>
-<script src="https://cdn.jsdelivr.net/npm/aladin-lite@3.8.2/dist/aladin.js" charset="utf-8"></script>
+<script type="module">
+// Aladin Lite 3.8.2 from jsdelivr is an ES module; expose it as window.A. Fall back to the CDS script if jsdelivr fails.
+const ready=()=>{ window.__aladinReady=true; window.dispatchEvent(new Event('aladin-ready')); };
+import('https://cdn.jsdelivr.net/npm/aladin-lite@3.8.2/dist/aladin.js').then(m=>{ window.A=m.default; ready(); })
+ .catch(()=>{ const s=document.createElement('script'); s.src='https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js'; s.onload=ready; document.head.appendChild(s); });
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box} html,body{height:100%}
@@ -346,7 +351,8 @@ if(sb) sb.auth.onAuthStateChange((ev,session)=>{ me=session?session.user:null; r
 
 /* ---------- sky ---------- */
 buildSurveys(); buildCats(); renderList();
-Promise.all([A.init,cdsCheck()]).then(([_,ok])=>{
+const aladinLoaded=()=>new Promise(res=>{ if(window.__aladinReady) res(); else window.addEventListener('aladin-ready',res,{once:true}); });
+Promise.all([aladinLoaded().then(()=>A.init),cdsCheck()]).then(([_,ok])=>{
  CDS_OK=ok; if(!ok) enterMirrorMode();
  aladin=A.aladin('#aladin',{survey:ok?SURVEYS[0][1][0][0]:MIRROR['CDS/P/DSS2/color'][0],fov:150,target:'301.289 -17.363',projection:'AIT',cooFrame:'ICRSd',showReticle:false,showLayersControl:true,showFullscreenControl:true,showCooGridControl:true});
  setBase(SURVEYS[0][1][0][0]);
