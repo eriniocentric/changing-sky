@@ -37,6 +37,8 @@ h1{font-size:17px;margin:0 0 2px} .sub{font-size:12px;color:#9aa4b8} .note{font-
 .stamps{display:flex;gap:5px;margin:4px 0;flex:0 0 auto}
 .stamps figure{margin:0;text-align:center;font-size:10px;color:#9aa4b8}
 .stamps img{width:76px;height:76px;image-rendering:pixelated;border-radius:3px;background:#000;display:block}
+.tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:2px 0 4px} .tools button{background:#141a28;color:#c8cfdd;border:1px solid #2b3550;border-radius:5px;padding:3px 8px;font-size:11.5px;cursor:pointer} .tools button.on,.tools button:hover{background:#3a5bd9;color:#fff;border-color:#3a5bd9} .tools .sub{font-size:10.5px;flex:1 1 200px}
+#sedbox{margin:2px 0 6px}
 #lc{min-width:180px;height:120px;flex:1}
 .row{display:flex;gap:8px;align-items:flex-start}
 #card .expl{font-size:11px;margin:2px 0} #card details{margin-top:3px;font-size:11px} #card table.m{font-size:11px}
@@ -243,7 +245,7 @@ function stamp(sid,kind,label){
 }
 function openAlert(a,fly){
  clearPath(); if(a.cat==='sso') return openSSO(a,fly);
- sel=a; document.querySelectorAll('.item').forEach(e=>e.classList.toggle('sel',e.dataset.id===a.id));
+ sel=a; a._colOn=false; a._mono=null; document.querySelectorAll('.item').forEach(e=>e.classList.toggle('sel',e.dataset.id===a.id));
  const c=catInfo[a.cat];
  const links=[`<a target="_blank" href="https://lsst.fink-portal.org/${a.id}">Fink</a>`,`<a target="_blank" href="https://lasair.lsst.ac.uk/objects/${a.id}/">Lasair</a>`,
   `<a target="_blank" href="https://simbad.cds.unistra.fr/simbad/sim-coo?Coord=${a.ra}+${a.dec}&Radius=5&Radius.unit=arcsec">SIMBAD</a>`,
@@ -251,8 +253,10 @@ function openAlert(a,fly){
  if(a.name&&/^(SN|AT|TDE)\s/.test(a.name)) links.unshift(`<a target="_blank" href="https://www.wis-tns.org/object/${a.name.split(' ').slice(1).join('')}">TNS</a>`);
  $('cardbody').innerHTML=`<div class="ctitle"><span class="tag" style="background:${c[2]}">${c[1]}</span><b>${a.name||('Rubin object '+a.id)}</b> <span style="color:#9aa4b8">${a.mag} mag ${a.band} · SNR ${a.snr}</span></div>
   <div class="cbody">
-  <div class="row"><div class="stamps">${stamp(a.sid,'Science','New')}${stamp(a.sid,'Template','Before')}${stamp(a.sid,'Difference','Change')}</div>
+  <div class="row"><div class="stamps" id="stamps">${stamp(a.sid,'Science','New')}${stamp(a.sid,'Template','Before')}${stamp(a.sid,'Difference','Change')}</div>
   <div id="lc"><div class="sub" style="padding:10px">Loading light curve…</div></div></div>
+  <div class="tools"><button id="colbtn" title="Combine this object's cutouts from different filters into a colour image">🎨 Colour</button><button id="sedbtn" title="Archival photometry from CDS VizieR plus Rubin's newest brightness">📈 SED</button><span id="colnote" class="sub"></span></div>
+  <div id="sedbox" style="display:none"></div>
   ${a.xm?'<div class="expl"><b>Catalogue:</b> '+a.xm+'</div>':''}${a.sat?'<div class="expl" style="color:#ffa94d">🛰 '+a.sat+' — this detection could be a satellite glint.</div>':''}
   <div id="community"></div>
   <div style="font-size:11px">Open in: ${links.join(' · ')}</div>
@@ -265,7 +269,106 @@ function openAlert(a,fly){
  $('card').style.display='block'; $('card').classList.remove('min'); $('minbtn').textContent='–';
  if(fly&&aladin){aladin.gotoRaDec(a.ra,a.dec); aladin.setFoV(0.08);}
  loadLC(a); loadCommunity(a);
+ $('colbtn').onclick=()=>toggleColour(a); $('sedbtn').onclick=()=>toggleSED(a);
 }
+/* ---------- colour composite from single-band alert cutouts ---------- */
+function parseFITS(buf){ const u=new Uint8Array(buf); let off=0, H={}, end=false;
+ while(!end&&off<u.length){ for(let i=0;i<36;i++){ const card=String.fromCharCode.apply(null,u.subarray(off+i*80,off+i*80+80)); const k=card.slice(0,8).trim();
+   if(k==='END'){ end=true; break; } if(card[8]==='='){ let v=card.slice(10).split('/')[0].trim(); if(v[0]==="'") v=v.replace(/'/g,'').trim(); else v=+v; H[k]=v; } } off+=2880; }
+ const nx=H.NAXIS1, ny=H.NAXIS2, bp=H.BITPIX, dv=new DataView(buf,off), n=nx*ny, d=new Float64Array(n);
+ for(let i=0;i<n;i++) d[i]=bp===-32?dv.getFloat32(i*4,false):bp===-64?dv.getFloat64(i*8,false):NaN;
+ return {H:H,nx:nx,ny:ny,d:d}; }
+function regrid(im,ra0,de0,N,pix){ const H=im.H, out=new Float64Array(N*N), cd=Math.cos(H.CRVAL2*Math.PI/180), c0=Math.cos(de0*Math.PI/180);
+ const a=H.PC1_1*(H.CDELT1||1), b=H.PC1_2*(H.CDELT1||1), c=H.PC2_1*(H.CDELT2||1), e=H.PC2_2*(H.CDELT2||1), det=a*e-b*c;
+ for(let j=0;j<N;j++) for(let i=0;i<N;i++){ const XI=-(i-(N-1)/2)*pix, ETA=(j-(N-1)/2)*pix, ra=ra0+XI/c0, de=de0+ETA;
+   let dra=ra-H.CRVAL1; if(dra>180) dra-=360; if(dra<-180) dra+=360; const xi=dra*cd, eta=de-H.CRVAL2;
+   const x=( e*xi-b*eta)/det+H.CRPIX1-1, y=(-c*xi+a*eta)/det+H.CRPIX2-1, x0=Math.floor(x), y0=Math.floor(y), fx=x-x0, fy=y-y0;
+   if(x0<0||y0<0||x0+1>=im.nx||y0+1>=im.ny){ out[j*N+i]=NaN; continue; }
+   const p=(xx,yy)=>im.d[yy*im.nx+xx]; out[j*N+i]=p(x0,y0)*(1-fx)*(1-fy)+p(x0+1,y0)*fx*(1-fy)+p(x0,y0+1)*(1-fx)*fy+p(x0+1,y0+1)*fx*fy; }
+ return out; }
+function pctl(arr,q){ const v=Array.from(arr).filter(x=>isFinite(x)).sort((x,y)=>x-y); return v.length?v[Math.min(v.length-1,Math.floor(q*v.length))]:1; }
+function lupRGB(R,G,Bb,N,stretch,clip0){ const out=new Uint8ClampedArray(N*N*4), Q=8, I=new Float64Array(N*N), rgb=[R,G,Bb];
+ for(let k=0;k<N*N;k++){ let s=0; for(const ch of rgb){ let v=ch[k]; if(clip0&&v<0) v=0; s+=v; } I[k]=s/3; }
+ const tmp=[]; for(let k=0;k<N*N;k++){ if(!rgb.every(ch=>isFinite(ch[k]))) continue; const f=Math.asinh(Q*Math.max(I[k],1e-9)/stretch)/Q;
+   for(const ch of rgb){ let v=ch[k]; if(clip0&&v<0) v=0; tmp.push(I[k]>0?Math.max(0,v)*f/I[k]:0); } }
+ const top=pctl(tmp,0.997)||1;
+ for(let k=0;k<N*N;k++){ const o=4*((N-1-Math.floor(k/N))*N+(k%N)); // flip so north is up
+   if(!rgb.every(ch=>isFinite(ch[k]))){ out[o]=out[o+1]=out[o+2]=30; out[o+3]=255; continue; }
+   const f=Math.asinh(Q*Math.max(I[k],1e-9)/stretch)/Q;
+   rgb.forEach((ch,m)=>{ let v=ch[k]; if(clip0&&v<0) v=0; out[o+m]=I[k]>0?255*Math.min(1,Math.max(0,v)*f/I[k]/top):0; }); out[o+3]=255; }
+ return out; }
+const BANDORDER=['u','g','r','i','z','y'];
+function pickBands(rows,mjd){ // one source per band, nearest in time to the opened alert
+ const by={}; rows.forEach(r=>{ const b=r['r:band']; if(!b||r['r:diaSourceId']==null) return; const dt=Math.abs(r['r:midpointMjdTai']-mjd);
+   if(!by[b]||dt<by[b].dt) by[b]={sid:String(r['r:diaSourceId']),dt:dt,mjd:r['r:midpointMjdTai']}; });
+ let bands=BANDORDER.filter(b=>by[b]); if(bands.length>3){ bands.sort((x,y)=>by[x].dt-by[y].dt); bands=bands.slice(0,3); bands.sort((x,y)=>BANDORDER.indexOf(x)-BANDORDER.indexOf(y)); }
+ return {bands:bands,by:by}; }
+async function fetchFITS(sid,kind){ const r=await fetch(F+'/cutouts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({diaSourceId:sid,kind:kind,'output-format':'FITS'})});
+ if(!r.ok) throw new Error('cutout '+r.status); return parseFITS(await r.arrayBuffer()); }
+async function buildColour(a,rows){ const pk=pickBands(rows,a.mjd); if(pk.bands.length<2) return {err:'Only one filter so far ('+(pk.bands[0]||'none')+'), so no colour image yet.'};
+ const kinds=['Template','Science','Difference'], ims={};
+ for(const b of pk.bands) for(const k of kinds){ ims[b+k]=await fetchFITS(pk.by[b].sid,k); }
+ const ref=ims[pk.bands[pk.bands.length-1]+'Template'].H, N=34, pix=0.2/3600, ra0=ref.CRVAL1, de0=ref.CRVAL2, res={bands:pk.bands,by:pk.by,N:N,img:{}};
+ const ch=k=>{ const g=pk.bands.map(b=>regrid(ims[b+k],ra0,de0,N,pix)); if(g.length===2) g.splice(1,0,g[0].map((v,i)=>(v+g[1][i])/2)); return [g[2],g[1],g[0]]; }; // R=reddest
+ const T=ch('Template'), S=ch('Science'), D=ch('Difference');
+ const mean=X=>X[0].map((v,i)=>(X[0][i]+X[1][i]+X[2][i])/3), st=pctl(mean(S),0.99)||1, sd=pctl(mean(D).map(v=>Math.max(0,v)),0.99)||1;
+ res.img.Template=lupRGB(T[0],T[1],T[2],N,st,true); res.img.Science=lupRGB(S[0],S[1],S[2],N,st,true); res.img.Difference=lupRGB(D[0],D[1],D[2],N,sd,true);
+ return res; }
+const bigJSON=t=>JSON.parse(t.replace(/("r:dia(?:Source|Object)Id"\s*:\s*)(-?\d{16,})/g,'$1"$2"'));
+
+/* ---------- SED: archival photometry (CDS VizieR) + Rubin now ---------- */
+const BANDLAM={u:0.367,g:0.482,r:0.622,i:0.755,z:0.869,y:0.971};   // µm, LSST effective wavelengths
+function parseSED(txt){ const names=[...txt.matchAll(/<FIELD[^>]*name="([^"]+)"/g)].map(m=>m[1]);
+ const ix=s=>names.findIndex(n=>n.replace(/^_/,'')===s), iF=ix('sed_freq'), iS=ix('sed_flux'), iE=ix('sed_eflux'), iN=ix('sed_filter'), iT=ix('tabname');
+ if(iF<0||iS<0) return [];
+ const rows=[...txt.matchAll(/<TR>([\s\S]*?)<\/TR>/g)].map(m=>[...m[1].matchAll(/<TD>([^<]*)<\/TD>|<TD\/>/g)].map(x=>x[1]==null?'':x[1]));
+ return rows.map(r=>({lam:299792.458/(+r[iF]), f:+r[iS]*1e3, e:iE>=0&&r[iE]!==''?+r[iE]*1e3:0, filt:iN>=0?r[iN]:'', tab:iT>=0?r[iT]:''}))   // µm, mJy
+  .filter(p=>isFinite(p.lam)&&p.lam>0&&isFinite(p.f)&&p.f>0); }
+function dedupeSED(pts){ const g={}; pts.forEach(p=>{ const k=p.filt||p.lam.toPrecision(3); (g[k]=g[k]||[]).push(p); });
+ return Object.values(g).map(L=>{ const s=L.map(p=>p.f).sort((x,y)=>x-y), m=s[Math.floor(s.length/2)];
+   return {lam:L[0].lam,f:m,e:L.length>1?(s[s.length-1]-s[0])/2:L[0].e,filt:L[0].filt,n:L.length,tab:L.map(p=>p.tab).filter((v,i,a)=>a.indexOf(v)===i).slice(0,3).join(', ')}; }); }
+function rubinNow(rows){ const by={}; (rows||[]).forEach(r=>{ const b=r['r:band'], f=r['r:scienceFlux']; if(!b||f==null||!(f>0)) return; if(!by[b]||r['r:midpointMjdTai']>by[b].t) by[b]={t:r['r:midpointMjdTai'],f:f}; });
+ return Object.entries(by).map(([b,v])=>({lam:BANDLAM[b],f:v.f*1e-6,b:b,t:v.t})); }
+function svgSED(cat,rub,W){ W=Math.max(260,W||320); const H=170, L=42, R=8, T=18, B=26, all=cat.concat(rub);
+ if(!all.length) return '<div class="sub" style="padding:10px">No photometry found within 1.5″.</div>';
+ const lx=all.map(p=>Math.log10(p.lam)), ly=all.map(p=>Math.log10(p.f));
+ let x0=Math.min(...lx)-0.1, x1=Math.max(...lx)+0.1, y0=Math.min(...ly)-0.3, y1=Math.max(...ly)+0.3;
+ const sx=v=>L+(Math.log10(v)-x0)/(x1-x0)*(W-L-R), sy=v=>T+(y1-Math.log10(v))/(y1-y0)*(H-T-B);
+ let s=`<svg width="${W}" height="${H}" style="display:block;font:9px system-ui,sans-serif">`;
+ const tk=(a,b)=>{ const o=[]; for(let e=Math.floor(a);e<=Math.ceil(b);e++) [1,2,5].forEach(m=>{ const v=m*Math.pow(10,e), l=Math.log10(v); if(l>=a&&l<=b) o.push(v); }); return (o.length>7?o.filter(v=>Math.abs(Math.log10(v)%1)<1e-9||Math.abs(Math.log10(v)%1)>1-1e-9):o); };
+ const fmt=v=>v>=1000||v<0.001?v.toExponential(0):String(+v.toPrecision(2));
+ tk(x0,x1).forEach(v=>{ const X=sx(v).toFixed(1); s+=`<line x1="${X}" x2="${X}" y1="${T}" y2="${H-B}" stroke="#222a3a"/><text x="${X}" y="${H-B+11}" fill="#9aa4b8" text-anchor="middle">${fmt(v)}</text>`; });
+ tk(y0,y1).forEach(v=>{ const Y=sy(v).toFixed(1); s+=`<line x1="${L}" x2="${W-R}" y1="${Y}" y2="${Y}" stroke="#222a3a"/><text x="${L-3}" y="${(+Y+3).toFixed(1)}" fill="#9aa4b8" text-anchor="end">${fmt(v)}</text>`; });
+ s+=`<text x="${(L+W-R)/2}" y="${H-3}" fill="#9aa4b8" text-anchor="middle">wavelength (µm)</text><text x="${L}" y="11" fill="#c8cfdd">flux density (mJy) · grey: catalogues · colour: Rubin now</text>`;
+ cat.forEach(p=>{ const X=sx(p.lam).toFixed(1), Y=sy(p.f).toFixed(1);
+   if(p.e>0&&p.f-p.e>0) s+=`<line x1="${X}" x2="${X}" y1="${sy(p.f+p.e).toFixed(1)}" y2="${sy(p.f-p.e).toFixed(1)}" stroke="#8a93a6" opacity="0.6"/>`;
+   s+=`<circle cx="${X}" cy="${Y}" r="2.6" fill="#c8cfdd" opacity="0.85"><title>${esc(p.filt)} · ${p.lam.toPrecision(3)} µm · ${p.f.toPrecision(3)} mJy${p.n>1?' (median of '+p.n+')':''} · ${esc(p.tab)}</title></circle>`; });
+ rub.forEach(p=>{ s+=`<rect x="${(sx(p.lam)-3.5).toFixed(1)}" y="${(sy(p.f)-3.5).toFixed(1)}" width="7" height="7" fill="${BANDC[p.b]}" stroke="#fff" stroke-width="0.8"><title>Rubin ${p.b} · MJD ${p.t.toFixed(3)} · ${p.f.toPrecision(3)} mJy (total flux in the new image)</title></rect>`; });
+ return s+'</svg>'; }
+async function loadSED(a,box){ box.innerHTML='<div class="sub" style="padding:8px">Asking CDS VizieR for archival photometry…</div>';
+ const rub=rubinNow(a._lc); let cat=[], note='';
+ if(typeof CDS_OK!=='undefined'&&!CDS_OK) note='The CDS VizieR service is offline right now, so only Rubin points are shown.';
+ else { try{ const c=new AbortController(), t=setTimeout(()=>c.abort(),15000);
+     const r=await fetch(`https://vizier.cds.unistra.fr/viz-bin/sed?-c=${a.ra}%20${a.dec}&-c.rs=1.5`,{signal:c.signal}); clearTimeout(t);
+     cat=dedupeSED(parseSED(await r.text())); }catch(e){ note='Could not reach CDS VizieR ('+(e.name==='AbortError'?'timed out':e.message)+'); only Rubin points are shown.'; } }
+ if(sel!==a) return;
+ box.innerHTML=svgSED(cat,rub,box.clientWidth)+`<div class="sub" style="font-size:10px;margin-top:2px">${note?esc(note)+' ':''}${cat.length} catalogue bands within 1.5″ from the <a target="_blank" href="https://vizier.cds.unistra.fr/vizier/sed/?submitSimbad=Photometry&-c=${a.ra}%20${a.dec}&-c.r=1.5&-c.u=arcsec">VizieR photometry viewer</a>. Catalogue points are mostly years old; Rubin squares show the total brightness in its newest image in each filter.</div>`; }
+
+function drawRGBA(cv,px,N){ cv.width=N; cv.height=N; const ctx=cv.getContext('2d'); const im=ctx.createImageData(N,N); im.data.set(px); ctx.putImageData(im,0,0); }
+function lcReady(a){ return a._lcP||Promise.resolve(a._lc||[]); }
+async function toggleColour(a){ const btn=$('colbtn'), st=$('stamps'), note=$('colnote');
+ if(a._colOn){ a._colOn=false; btn.classList.remove('on'); btn.textContent='🎨 Colour'; st.innerHTML=a._mono; note.textContent=''; return; }
+ btn.disabled=true; btn.textContent='🎨 Building…';
+ try{ const rows=await lcReady(a); if(sel!==a) return; const res=a._colRes||await buildColour(a,rows); if(sel!==a) return; a._colRes=res;
+   if(res.err){ note.textContent=res.err; return; }
+   a._mono=a._mono||st.innerHTML; a._colOn=true; btn.classList.add('on'); btn.textContent='🎨 Single band';
+   st.innerHTML=['Template','Science','Difference'].map((k,i)=>`<figure><canvas id="cv${i}" style="width:76px;height:76px;image-rendering:pixelated;border-radius:3px;display:block"></canvas><figcaption>${['Before','New','Change'][i]} · ${res.bands.join('')}</figcaption></figure>`).join('');
+   ['Template','Science','Difference'].forEach((k,i)=>drawRGBA($('cv'+i),res.img[k],res.N));
+   note.innerHTML='Colour built from '+res.bands.map(b=>`<span style="color:${BANDC[b]}">${b}</span> (MJD ${res.by[b].mjd.toFixed(2)})`).join(', ')+'; north up, east left, 6.8″ across. Filters taken at different times, so a fast-changing source can look odder in colour than it is. Grey: outside the area all filters cover.';
+ }catch(e){ note.textContent='Could not build the colour image ('+e.message+').'; }
+ finally{ btn.disabled=false; if(!a._colOn&&btn.textContent.indexOf('Building')>=0) btn.textContent='🎨 Colour'; } }
+function toggleSED(a){ const b=$('sedbox'), btn=$('sedbtn'); if(b.style.display==='block'){ b.style.display='none'; btn.classList.remove('on'); return; }
+ b.style.display='block'; btn.classList.add('on'); lcReady(a).then(()=>{ if(sel===a) loadSED(a,b); }); }
 function niceTicks(lo,hi,n){ if(!(hi>lo)){ hi=lo+1; } const span=hi-lo, step0=span/Math.max(1,n), mag=Math.pow(10,Math.floor(Math.log10(step0))), f=step0/mag;
  const step=(f<1.5?1:f<3?2:f<7?5:10)*mag, out=[]; for(let v=Math.ceil(lo/step)*step; v<=hi+1e-9; v+=step) out.push(+v.toFixed(10)); return {ticks:out,step:step}; }
 function svgLC(rows){
@@ -288,9 +391,9 @@ function svgLC(rows){
  return s+'</svg>';
 }
 function loadLC(a){
- const url=`${F}/sources?diaObjectId=${a.id}&columns=r:midpointMjdTai,r:band,r:psfFlux,r:psfFluxErr&output-format=json`;
- fetch(url).then(r=>r.json()).then(rows=>{ if(sel!==a) return; a._lc=rows; $('lc').innerHTML=svgLC(rows); })
- .catch(e=>{ $('lc').innerHTML='<div class="sub" style="padding:10px">Could not load light curve from Fink ('+e+').</div>'; });
+ const url=`${F}/sources?diaObjectId=${a.id}&columns=r:diaSourceId,r:midpointMjdTai,r:band,r:psfFlux,r:psfFluxErr,r:scienceFlux&output-format=json`;
+ a._lcP=fetch(url).then(r=>r.text()).then(bigJSON).then(rows=>{ a._lc=rows; if(sel===a) $('lc').innerHTML=svgLC(rows); return rows; })
+ .catch(e=>{ if(sel===a) $('lc').innerHTML='<div class="sub" style="padding:10px">Could not load light curve from Fink ('+e+').</div>'; return []; });
 }
 
 /* ---------- asteroids ---------- */
