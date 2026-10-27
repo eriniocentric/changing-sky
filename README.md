@@ -1,3 +1,5 @@
+<img src="logo_full.png" alt="Changing Sky" width="560">
+
 # Changing Sky
 
 **🌌 Open the site: https://eriniocentric.github.io/changing-sky/**
