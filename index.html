@@ -56,6 +56,7 @@ a{color:#8ab4ff} details{font-size:12px;color:#b8c0d0;margin-top:8px} summary{cu
 header{position:relative}
 #acct{position:absolute;top:8px;right:14px;font-size:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;max-width:55%}
 #acct form{display:flex;gap:4px} #acct button,#acct input{background:#141a28;color:#e6e9ef;border:1px solid #2b3550;border-radius:5px;padding:4px 8px;font-size:12px;cursor:pointer}
+#acct .gbtn{background:#fff;color:#1f1f1f;border-color:#dadce0;font-weight:600}
 #acct #signin{background:#3a5bd9;border-color:#3a5bd9;font-weight:600}
 .tabs{display:flex;gap:4px;margin-bottom:4px} .tabs button{flex:1;background:#141a28;color:#c8cfdd;border:1px solid #2b3550;border-radius:5px;padding:5px 2px;font-size:12px;cursor:pointer} .tabs button.on{background:#3a5bd9;color:#fff;border-color:#3a5bd9}
 .comm{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:5px 0 2px}
@@ -222,7 +223,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeCard(); });
 const SB_URL="https://lnfxxsxmkecwedheyvuq.supabase.co", SB_KEY="sb_publishable_dB2VlyI9Vu_P90EjAU0_Dw_YZRWz_Fj";
 const REASONS=[['rising_fast','Rising fast'],['no_host','No host galaxy'],['odd_colour','Odd colour'],['bright','Bright'],['unusual_lightcurve','Unusual light curve'],['possible_artefact','Possible artefact'],['other','Other']];
 const RLAB=Object.fromEntries(REASONS);
-let sb=null, me=null, SCORES=new Map(), MYV=new Map(), FU=new Map(), picksLayer=null;
+let GOOGLE=false; let sb=null, me=null, SCORES=new Map(), MYV=new Map(), FU=new Map(), picksLayer=null;
 try{ sb=window.supabase.createClient(SB_URL,SB_KEY); }catch(e){ console.warn('community features offline',e); }
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function renderAcct(){
@@ -230,10 +231,12 @@ function renderAcct(){
  if(me){ el.innerHTML=`<span class="sub">Signed in as ${esc(me.email)}</span><button id="signout">Sign out</button>`; $('signout').onclick=async()=>{ await sb.auth.signOut(); }; }
  else { el.innerHTML=`<button id="signin">Sign in to vote &amp; comment</button>`; $('signin').onclick=showSignin; }
 }
+function googleSignin(){ sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}}); 
+}
 function showSignin(){
  if(!sb) return;
- $('acct').innerHTML=`<form id="sf"><input id="sem" type="email" required placeholder="your@email"><button>Email me a sign-in link</button><button type="button" id="sx" title="Cancel">✕</button></form><div id="smsg" class="sub" style="width:100%;text-align:right"></div>`;
- $('sx').onclick=renderAcct; $('sem').focus();
+ $('acct').innerHTML=`${GOOGLE?'<button type="button" id="gbtn" class="gbtn">Continue with Google</button><span class="sub">or</span>':''}<form id="sf"><input id="sem" type="email" required placeholder="your@email"><button>Email me a sign-in link</button><button type="button" id="sx" title="Cancel">✕</button></form><div id="smsg" class="sub" style="width:100%;text-align:right"></div>`;
+ $('sx').onclick=renderAcct; $('sem').focus(); if(GOOGLE) $('gbtn').onclick=googleSignin;
  $('sf').onsubmit=async e=>{ e.preventDefault(); const email=$('sem').value.trim();
    const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});
    $('smsg').textContent=error?('Could not send: '+error.message):'Check your inbox — the link brings you back here, signed in.'; };
@@ -296,6 +299,7 @@ async function loadComments(a){
 }
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b)); ['explore','top','fu'].forEach(t=>$('tab-'+t).style.display=(t===b.dataset.t?'block':'none')); });
 renderAcct();
+if(sb) fetch(SB_URL+'/auth/v1/settings',{headers:{apikey:SB_KEY}}).then(r=>r.json()).then(s=>{ GOOGLE=!!(s&&s.external&&s.external.google); }).catch(()=>{});
 if(sb) sb.auth.onAuthStateChange((ev,session)=>{ me=session?session.user:null; renderAcct(); setTimeout(async()=>{ await loadMyVotes(); await refreshScores(); if(sel) loadCommunity(sel); },0); });
 
 /* ---------- sky ---------- */
