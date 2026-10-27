@@ -1,5 +1,7 @@
 # Changing Sky
 
+**🌌 Open the site: https://eriniocentric.github.io/changing-sky/**
+
 *A community explorer of Vera C. Rubin Observatory alerts. Not an official Rubin Observatory product.*
 
 An interactive sky map of public alerts from the NSF–DOE Vera C. Rubin Observatory (LSST), for education and discovery.
