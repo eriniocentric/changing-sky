@@ -115,8 +115,6 @@ const toObj=r=>Object.fromEntries(COLS.map((c,i)=>[c,r[i]]));
 function ensureCat(k){ if(LOADED[k]) return LOADED[k]; const m=MANIFEST[k]; if(!m) return Promise.resolve();
  LOADED[k]=fetch(m.file).then(r=>r.json()).then(rows=>{ const arr=rows.map(toObj).sort((x,y)=>y.snr-x.snr); BYCAT[k]=arr; arr.forEach(a=>{ ALERTS.push(a); BYID.set(a.id,a); }); });
  return LOADED[k]; }
-let plotlyP=null;
-function needPlotly(){ if(window.Plotly) return Promise.resolve(); if(!plotlyP) plotlyP=new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdn.plot.ly/plotly-2.35.2.min.js'; s.charset='utf-8'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); return plotlyP; }
 const CATS=[["sn", "Supernovae & classified transients", "#ff5c5c", "A transient with a spectroscopic or catalogue classification on the Transient Name Server (TNS) \u2014 most are supernovae, exploding stars in other galaxies."], ["at", "Known transients (unclassified)", "#ffd43b", "Already reported to the Transient Name Server but not yet classified. These are prime targets for follow-up spectroscopy."], ["agn", "AGN, quasars & blazars", "#ffa94d", "An active galactic nucleus: gas falling onto a supermassive black hole flickers on timescales of days to years. Blazars point a jet at us and can flare dramatically."], ["var", "Variable stars", "#69db7c", "A star in our own Galaxy whose brightness changes \u2014 pulsating stars (RR Lyrae, Cepheids, delta Scuti), eclipsing binaries, flaring dwarfs, cataclysmic variables and young stars."], ["gal", "Changes in known galaxies", "#4dabf7", "The change sits on a catalogued galaxy but has no further identification: could be a new supernova, a nuclear flare, or a subtraction residual."], ["xgal", "Extragalactic candidates", "#74c0fc", "Selected by Fink as probably outside our Galaxy (new, or supernova-like), with no catalogue identification yet."], ["host", "Hostless transients", "#c77dff", "No visible host galaxy \u2014 possible superluminous supernova, a transient in a very faint galaxy, or something stranger."], ["other", "Other catalogued sources", "#e599f7", "Matched in SIMBAD to a source type that is neither a star nor a galaxy (radio, X-ray, infrared source and similar)."], ["unk", "Unidentified", "#ffffff", "No match within 1 arcsecond in SIMBAD, Gaia DR3, Milliquas, VSX or TNS, and the detection passed a strict reliability cut (\u22650.8). The unknown: faint transients, distant variables, or genuinely new phenomena."], ["glint", "Rubin-flagged glint trails", "#ff922b", "Detections that Rubin's own pipeline flagged as part of a glint trail \u2014 a line of short flashes, usually from a tumbling satellite or piece of debris catching the Sun. On this night they show up mostly in crowded star fields near the Milky Way and rarely line up with known satellites, so many may be chance alignments of real sources rather than satellites. Help us tell them apart!"], ["star", "Changes on catalogued stars", "#868e96", "Sits on a star in Gaia DR3 or SIMBAD that is not (yet) known to vary. Some are new variable stars or flares; many are imperfect subtractions around stars. There are over 100,000 of these, so expect a crowded sky when they are switched on.", false]];            // [key,label,color,explanation]
 const SURVEYS=[["Optical", [["CDS/P/DSS2/color", "DSS2 colour", "100% of sky", "https://alasky.cds.unistra.fr/DSS/DSSColor/preview.jpg"], ["CDS/P/DESI-Legacy-Surveys/DR10/color", "DESI Legacy Surveys DR10", "67% of sky", "https://alasky.cds.unistra.fr/DESI-legacy-surveys/DR10/CDS_P_DESI-Legacy-Surveys_DR10_color/preview.jpg"], ["CDS/P/DES-DR2/ColorIRG", "Dark Energy Survey DR2", "13% of sky", "https://alasky.cds.unistra.fr/DES/DR2/CDS_P_DES-DR2_ColorIRG/preview.jpg"], ["CDS/P/DECaPS/DR2/color", "DECaPS (southern Galactic plane)", "7% of sky", "https://alasky.cds.unistra.fr/DECaPS/DR2/CDS_P_DECaPS_DR2_color/preview.jpg"], ["CDS/P/PanSTARRS/DR1/color-z-zg-g", "Pan-STARRS DR1", "78% of sky", "https://alasky.cds.unistra.fr/Pan-STARRS/DR1/color-z-zg-g/preview.jpg"], ["CDS/P/SDSS9/color", "SDSS DR9", "36% of sky", "https://alasky.cds.unistra.fr/SDSS/DR9/color/preview.jpg"], ["CDS/P/Mellinger/color", "Mellinger Milky Way panorama", "100% of sky", "https://alasky.cds.unistra.fr/MellingerRGB/preview.jpg"]]], ["Rubin", [["CDS/P/Rubin/FirstLook", "Rubin First Look", "small fields", "https://alasky.cds.unistra.fr/Rubin/CDS_P_Rubin_FirstLook/preview.jpg"]]], ["Infrared", [["CDS/P/2MASS/color", "2MASS near-infrared", "100% of sky", "https://alasky.cds.unistra.fr/2MASS/Color/preview.jpg"], ["VOXASTRO/P/VHS/JKs/color", "VISTA Hemisphere Survey", "48% of sky", null], ["CDS/P/unWISE/color-W2-W1W2-W1", "unWISE", "100% of sky", "https://alasky.cds.unistra.fr/unWISE/color-W2-W1W2-W1/preview.jpg"], ["CDS/P/allWISE/color", "AllWISE mid-infrared", "100% of sky", "https://alasky.cds.unistra.fr/AllWISE/RGB-W4-W2-W1/preview.jpg"], ["CDS/P/IRIS/color", "IRAS far-infrared", "100% of sky", "https://alasky.cds.unistra.fr/IRISColor/preview.jpg"]]], ["Ultraviolet", [["CDS/P/GALEXGR6_7/color", "GALEX ultraviolet", "79% of sky", "https://alasky.cds.unistra.fr/GALEX/GALEXGR6_7_color/preview.jpg"]]], ["X-ray", [["CDS/P/RASS", "ROSAT all-sky X-ray", "100% of sky", "https://alasky.cds.unistra.fr/RASS/preview.jpg"], ["xcatdb/P/XMM/PN/color", "XMM-Newton (pointed fields)", "9% of sky", null]]], ["Radio", [["CSIRO/P/RACS/low/I", "ASKAP RACS 888 MHz", "84% of sky", null], ["CDS/P/SUMSS", "SUMSS 843 MHz", "25% of sky", "https://alasky.cds.unistra.fr/SUMSS/preview.jpg"], ["CDS/P/NVSS", "NVSS 1.4 GHz", "82% of sky", "https://alasky.cds.unistra.fr/NVSS/intensity/preview.jpg"], ["CDS/P/HI4PI/NHI", "HI4PI hydrogen gas", "100% of sky", "https://alasky.cds.unistra.fr/HI4PI/P_HI4PI_NHI/preview.jpg"]]], ["Gamma-ray", [["CDS/P/Fermi/color", "Fermi gamma-ray", "100% of sky", "https://alasky.cds.unistra.fr/Fermi/Color/preview.jpg"]]]];      // [group,[[id,title,coverage,preview],...]]
 const BANDC={u:"#5b3a96",g:"#2a7fb8",r:"#3a9e5a",i:"#d6a21e",z:"#d4602a",y:"#8c2d2d"};
@@ -247,22 +245,35 @@ function openAlert(a,fly){
  if(fly&&aladin){aladin.gotoRaDec(a.ra,a.dec); aladin.setFoV(0.08);}
  loadLC(a); loadCommunity(a);
 }
+function niceTicks(lo,hi,n){ if(!(hi>lo)){ hi=lo+1; } const span=hi-lo, step0=span/Math.max(1,n), mag=Math.pow(10,Math.floor(Math.log10(step0))), f=step0/mag;
+ const step=(f<1.5?1:f<3?2:f<7?5:10)*mag, out=[]; for(let v=Math.ceil(lo/step)*step; v<=hi+1e-9; v+=step) out.push(+v.toFixed(10)); return {ticks:out,step:step}; }
+function svgLC(rows){
+ const box=$('lc'), W=Math.max(220,(box&&box.clientWidth)||300), H=120, L=38, R=6, T=16, B=20;
+ const pts=rows.filter(r=>r['r:psfFlux']!=null&&r['r:midpointMjdTai']!=null).map(r=>({x:r['r:midpointMjdTai'],y:r['r:psfFlux']/1000,e:(r['r:psfFluxErr']||0)/1000,b:r['r:band']}));
+ if(!pts.length) return '<div class="sub" style="padding:10px">No photometry returned.</div>';
+ let x0=Math.min(...pts.map(p=>p.x)), x1=Math.max(...pts.map(p=>p.x)); if(x1-x0<0.5){ x0-=0.5; x1+=0.5; } const px=(x1-x0)*0.04; x0-=px; x1+=px;
+ let y0=Math.min(0,...pts.map(p=>p.y-p.e)), y1=Math.max(0,...pts.map(p=>p.y+p.e)); const py=(y1-y0)*0.08||1; y0-=py; y1+=py;
+ const sx=v=>L+(v-x0)/(x1-x0)*(W-L-R), sy=v=>T+(y1-v)/(y1-y0)*(H-T-B);
+ let s=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;font:9px system-ui,sans-serif">`;
+ const xt=niceTicks(x0,x1,4), yt=niceTicks(y0,y1,4);
+ xt.ticks.forEach(v=>{ const X=sx(v).toFixed(1); s+=`<line x1="${X}" x2="${X}" y1="${T}" y2="${H-B}" stroke="#222a3a"/><text x="${X}" y="${H-B+11}" fill="#9aa4b8" text-anchor="middle">${xt.step<1?v.toFixed(1):Math.round(v)}</text>`; });
+ yt.ticks.forEach(v=>{ const Y=sy(v).toFixed(1); s+=`<line x1="${L}" x2="${W-R}" y1="${Y}" y2="${Y}" stroke="#222a3a"/><text x="${L-3}" y="${(+Y+3).toFixed(1)}" fill="#9aa4b8" text-anchor="end">${+v.toPrecision(3)}</text>`; });
+ s+=`<line x1="${L}" x2="${W-R}" y1="${sy(0).toFixed(1)}" y2="${sy(0).toFixed(1)}" stroke="#55607a"/>`;
+ s+=`<text x="${L}" y="10" fill="#c8cfdd">${pts.length} detections · difference flux (μJy) vs MJD</text>`;
+ Object.keys(BANDC).forEach(b=>pts.filter(p=>p.b===b).forEach(p=>{ const X=sx(p.x).toFixed(1), Y=sy(p.y).toFixed(1);
+   if(p.e>0) s+=`<line x1="${X}" x2="${X}" y1="${sy(p.y-p.e).toFixed(1)}" y2="${sy(p.y+p.e).toFixed(1)}" stroke="${BANDC[b]}" stroke-width="1" opacity="0.7"/>`;
+   s+=`<circle cx="${X}" cy="${Y}" r="2.4" fill="${BANDC[b]}"><title>${b}-band · MJD ${p.x.toFixed(3)} · ${p.y.toFixed(2)} ± ${p.e.toFixed(2)} μJy</title></circle>`; }));
+ let lx=W-R; Object.keys(BANDC).slice().reverse().forEach(b=>{ if(!pts.some(p=>p.b===b)) return; lx-=16; s+=`<circle cx="${lx}" cy="7" r="3" fill="${BANDC[b]}"/><text x="${lx+5}" y="10" fill="#c8cfdd">${b}</text>`; });
+ return s+'</svg>';
+}
 function loadLC(a){
  const url=`${F}/sources?diaObjectId=${a.id}&columns=r:midpointMjdTai,r:band,r:psfFlux,r:psfFluxErr&output-format=json`;
- fetch(url).then(r=>r.json()).then(rows=>needPlotly().then(()=>rows)).then(rows=>{
-  if(sel!==a) return;
-  const by={}; rows.forEach(r=>{(by[r['r:band']]=by[r['r:band']]||[]).push(r);});
-  const tr=Object.keys(BANDC).filter(b=>by[b]).map(b=>({x:by[b].map(r=>r['r:midpointMjdTai']),y:by[b].map(r=>r['r:psfFlux']/1000),
-    error_y:{type:'data',array:by[b].map(r=>r['r:psfFluxErr']/1000),thickness:1,width:0},mode:'markers',type:'scatter',name:b,marker:{color:BANDC[b],size:6}}));
-  tr.forEach(t=>t.marker.size=4);
-  Plotly.newPlot('lc',tr,{margin:{l:34,r:6,t:16,b:22},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',font:{color:'#c8cfdd',size:9},
-    title:{text:`${rows.length} detections · μJy vs MJD`,font:{size:10},x:0.02,y:0.98},xaxis:{gridcolor:'#222a3a',tickformat:'d',nticks:4},
-    yaxis:{gridcolor:'#222a3a',zeroline:true,zerolinecolor:'#55607a',nticks:4},legend:{orientation:'h',y:1.18,x:1,xanchor:'right',font:{size:9}},showlegend:true},{displayModeBar:false,responsive:true});
- }).catch(e=>{ $('lc').innerHTML='<div class="sub" style="padding:20px">Could not load light curve ('+e+').</div>'; });
+ fetch(url).then(r=>r.json()).then(rows=>{ if(sel!==a) return; a._lc=rows; $('lc').innerHTML=svgLC(rows); })
+ .catch(e=>{ $('lc').innerHTML='<div class="sub" style="padding:10px">Could not load light curve from Fink ('+e+').</div>'; });
 }
 function closeCard(){ $('card').style.display='none'; sel=null; document.querySelectorAll('.item.sel').forEach(e=>e.classList.remove('sel')); }
 $('close').onclick=closeCard;
-$('minbtn').onclick=()=>{ const m=$('card').classList.toggle('min'); $('minbtn').textContent=m?'+':'–'; $('minbtn').title=m?'Expand':'Minimise'; if(!m&&window.Plotly) try{Plotly.Plots.resize('lc')}catch(e){} };
+$('minbtn').onclick=()=>{ const m=$('card').classList.toggle('min'); $('minbtn').textContent=m?'+':'–'; $('minbtn').title=m?'Expand':'Minimise'; if(!m&&sel&&sel._lc) $('lc').innerHTML=svgLC(sel._lc); };
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeCard(); });
 
 /* ---------- community (Supabase) ---------- */
