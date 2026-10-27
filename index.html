@@ -39,6 +39,7 @@ table.m{font-size:12px;border-collapse:collapse} table.m td{padding:1px 10px 1px
 .cat{display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 2px;cursor:pointer}
 .dot{width:11px;height:11px;border-radius:6px;flex:0 0 auto} .cnt{margin-left:auto;color:#8a94a8;font-variant-numeric:tabular-nums}
 .cat.off{opacity:.35}
+#cullnote{display:none;position:absolute;top:40px;left:50%;transform:translateX(-50%);z-index:30;background:#141a28dd;border:1px solid #2b3550;border-radius:5px;padding:3px 9px;font-size:11px;color:#c8cfdd;white-space:nowrap}
 .cat.loading .cnt::after{content:' · loading…';color:#ffd43b}
 #cathead.flash{font-weight:700;color:#ffd43b;font-size:12px;animation:pulse 1.1s ease-in-out infinite}
 #cathead.done{font-weight:700;color:#c8cfdd}
@@ -78,6 +79,7 @@ header{position:relative}
  </div>
  <div id="center"><div id="aladin"></div>
   <div id="topbar"><button id="whole">Whole sky</button><button id="zoomsel">Zoom to selected</button></div>
+  <div id="cullnote">Showing the strongest 4,000 alerts per type in view — zoom in to see more. The list on the right includes all of them.</div>
   <div id="card"><button id="minbtn" class="cbtn" title="Minimise">–</button><button id="close" class="cbtn" title="Close (Esc)">✕</button><div id="cardbody"></div></div>
  </div>
  <div class="panel" id="right">
@@ -105,7 +107,7 @@ const MANIFEST={"sn": {"n": 29, "file": "data/sn.json"}, "at": {"n": 526, "file"
 const ALERTS=[], BYID=new Map(), BYCAT={}, LOADED={}; let BGDONE=false;
 const toObj=r=>Object.fromEntries(COLS.map((c,i)=>[c,r[i]]));
 function ensureCat(k){ if(LOADED[k]) return LOADED[k]; const m=MANIFEST[k]; if(!m) return Promise.resolve();
- LOADED[k]=fetch(m.file).then(r=>r.json()).then(rows=>{ const arr=rows.map(toObj); BYCAT[k]=arr; arr.forEach(a=>{ ALERTS.push(a); BYID.set(a.id,a); }); });
+ LOADED[k]=fetch(m.file).then(r=>r.json()).then(rows=>{ const arr=rows.map(toObj).sort((x,y)=>y.snr-x.snr); BYCAT[k]=arr; arr.forEach(a=>{ ALERTS.push(a); BYID.set(a.id,a); }); });
  return LOADED[k]; }
 let plotlyP=null;
 function needPlotly(){ if(window.Plotly) return Promise.resolve(); if(!plotlyP) plotlyP=new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdn.plot.ly/plotly-2.35.2.min.js'; s.charset='utf-8'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); return plotlyP; }
@@ -115,10 +117,20 @@ const BANDC={u:"#5b3a96",g:"#2a7fb8",r:"#3a9e5a",i:"#d6a21e",z:"#d4602a",y:"#8c2
 const catInfo=Object.fromEntries(CATS.map(c=>[c[0],c]));
 let aladin,layers={},visible=new Set(),sel=null,shown=300,ovLayer=null,touched=false;
 const $=id=>document.getElementById(id);
+const MAXPER=4000;
+function sepDeg(ra1,de1,ra2,de2){ const r=Math.PI/180; const c=Math.sin(de1*r)*Math.sin(de2*r)+Math.cos(de1*r)*Math.cos(de2*r)*Math.cos((ra1-ra2)*r); return Math.acos(Math.max(-1,Math.min(1,c)))/r; }
 function makeLayer(k){
  if(!aladin||layers[k]||!BYCAT[k]) return; const c=catInfo[k];
- const cat=A.catalog({name:c[1]+` (${BYCAT[k].length.toLocaleString()})`,color:c[2],sourceSize:k==='star'?6:9,shape:'circle'});
- aladin.addCatalog(cat); layers[k]=cat; cat.addSources(BYCAT[k].map(a=>A.source(a.ra,a.dec,{id:a.id})));
+ const cat=A.catalog({name:c[1],color:c[2],sourceSize:k==='star'?6:9,shape:'circle'}); aladin.addCatalog(cat); layers[k]=cat; cullAll();
+}
+let cullT=null; function scheduleCull(){ clearTimeout(cullT); cullT=setTimeout(cullAll,180); }
+function cullAll(){
+ if(!aladin) return; let ra0,de0,fov; try{ [ra0,de0]=aladin.getRaDec(); fov=Math.max.apply(null,aladin.getFov()); }catch(e){ return; }
+ const rad=Math.min(180,fov*0.75); let capped=false;
+ visible.forEach(k=>{ const L=layers[k], arr=BYCAT[k]; if(!L||!arr) return;
+   let s=[]; for(const a of arr){ if(rad>=90||sepDeg(a.ra,a.dec,ra0,de0)<rad){ s.push(a); if(s.length>=MAXPER){ capped=capped||arr.length>MAXPER; break; } } }
+   L.removeAll(); L.addSources(s.map(a=>A.source(a.ra,a.dec,{id:a.id}))); });
+ const n=$('cullnote'); if(n) n.style.display=capped?'block':'none';
 }
 
 
@@ -269,7 +281,7 @@ function chipsFor(r){ if(!r||!r.reasons) return ''; return Object.entries(r.reas
 function renderTop(err){ const box=$('tab-top'); if(!box) return;
  if(!sb||err){ box.innerHTML='<div class="hint">Community features are unavailable right now.</div>'; return; }
  const rows=[...SCORES.values()].filter(r=>r.votes>0).slice(0,100);
- if(BGDONE && !LOADED.star && rows.some(r=>!BYID.has(r.alert_id))) ensureCat('star').then(()=>{ renderTop(); renderFU(); drawPicks(); });
+ if(BGDONE && rows.some(r=>!BYID.has(r.alert_id)) && !(LOADED.unk&&LOADED.star)) Promise.all([ensureCat('unk'),ensureCat('star')]).then(()=>{ renderTop(); renderFU(); drawPicks(); });
  box.innerHTML='<div class="ph">Most wanted — ranked by community votes</div>'+(rows.length?'':'<div class="hint">No votes yet. Open an alert and press ▲ Upvote to be the first.</div>');
  rows.forEach((r,i)=>{ const a=BYID.get(r.alert_id), c=a?catInfo[a.cat]:null, d=document.createElement('div'); d.className='item';
   d.innerHTML=`<b>#${i+1} · ▲ ${r.votes}</b> ${a?`<span class="tag" style="background:${c[2]}">${esc(c[1])}</span><br>${esc(a.name||a.id)} · ${a.mag} mag ${a.band}`:esc(r.alert_id)}${r.artefact_flags?` · <span style="color:#ff8787">${r.artefact_flags} artefact flag${r.artefact_flags>1?'s':''}</span>`:''}${FU.has(r.alert_id)?` <span class="fu">${esc(FU.get(r.alert_id).status)}</span>`:''}<br>${chipsFor(r)}`;
@@ -320,8 +332,10 @@ A.init.then(()=>{
  aladin=A.aladin('#aladin',{survey:SURVEYS[0][1][0][0],fov:150,target:'301.289 -17.363',projection:'AIT',cooFrame:'ICRSd',showReticle:false,showLayersControl:true,showFullscreenControl:true,showCooGridControl:true});
  setBase(SURVEYS[0][1][0][0]);
  CATS.forEach(([k])=>{ if(visible.has(k)) ensureCat(k).then(()=>makeLayer(k)); });
- (async()=>{ for(const k of CATS.map(c=>c[0]).filter(k=>k!=='star')){ try{ await ensureCat(k); }catch(e){ console.warn('load',k,e); } }
+ aladin.on('positionChanged',scheduleCull); aladin.on('zoomChanged',scheduleCull);
+ const startBG=()=>(async()=>{ for(const k of CATS.map(c=>c[0]).filter(k=>k!=='star'&&k!=='unk')){ try{ await ensureCat(k); }catch(e){ console.warn('load',k,e); } }
    BGDONE=true; if(typeof renderTop==='function'){ renderTop(); renderFU(); drawPicks(); } })();
+ setTimeout(()=>{ if(window.requestIdleCallback) requestIdleCallback(startBG,{timeout:4000}); else startBG(); },2500);
  aladin.on('objectClicked',o=>{ if(o&&o.data&&o.data.id){const a=BYID.get(o.data.id); if(a) openAlert(a,false);} });
  $('whole').onclick=()=>{closeCard(); aladin.gotoRaDec(301.289,-17.363); aladin.setFoV(150);};
  drawPicks(); setInterval(refreshScores,60000);
