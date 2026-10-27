@@ -12,6 +12,9 @@ An interactive sky map of public alerts from the NSF–DOE Vera C. Rubin Observa
 - Background sky from public HiPS surveys via Aladin Lite (CDS): Rubin First Look, DSS2, DESI Legacy Surveys, DES, Pan-STARRS, 2MASS, WISE, GALEX, ROSAT, radio and gamma-ray surveys.
 - Clicking an alert loads its science/template/difference cutouts and light curve live from the Fink broker API.
 
+## Community
+Sign in with an emailed link (no password) to **upvote** alerts that deserve a closer look, tag *why* (rising fast, no host galaxy, odd colour, unusual light curve, possible artefact…), and **comment**. The **Most wanted** tab ranks alerts by votes; voted alerts glow on the sky as *Community picks*. A moderator reviews the top alerts before anything is sent for follow-up (e.g. TNS reports, Las Cumbres Observatory education telescopes, AAVSO). Votes and comments are stored in Supabase with row-level security: anyone can read, only signed-in users can write, one vote per person per alert.
+
 ## Data sources and method
 - Alerts: Fink broker public API (science streams, catalogue classes, and cone searches over the night's fields), ~94% of the objects Fink recorded that night.
 - Classification: Fink cross-matches (TNS, VSX, blazar catalogues, HyperLEDA) plus a 1-arcsecond cross-match against SIMBAD, Gaia DR3 and Milliquas via the CDS XMatch service.

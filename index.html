@@ -3,6 +3,7 @@
 <title>Changing Sky — a community explorer of Rubin Observatory alerts</title>
 <script src="https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js" charset="utf-8"></script>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box} html,body{height:100%}
 body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0b0f1a;color:#e6e9ef;display:flex;flex-direction:column}
@@ -52,10 +53,23 @@ table.m{font-size:12px;border-collapse:collapse} table.m td{padding:1px 10px 1px
 .more{width:100%;margin:4px 0;background:#1b2336;color:#c8cfdd;border:1px solid #2b3550;border-radius:5px;padding:5px;cursor:pointer;font-size:12px}
 a{color:#8ab4ff} details{font-size:12px;color:#b8c0d0;margin-top:8px} summary{cursor:pointer;color:#c8cfdd}
 .expl{font-size:12px;color:#b8c0d0;margin:4px 0 2px;max-width:900px}
+header{position:relative}
+#acct{position:absolute;top:8px;right:14px;font-size:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;max-width:55%}
+#acct form{display:flex;gap:4px} #acct button,#acct input{background:#141a28;color:#e6e9ef;border:1px solid #2b3550;border-radius:5px;padding:4px 8px;font-size:12px;cursor:pointer}
+#acct #signin{background:#3a5bd9;border-color:#3a5bd9;font-weight:600}
+.tabs{display:flex;gap:4px;margin-bottom:4px} .tabs button{flex:1;background:#141a28;color:#c8cfdd;border:1px solid #2b3550;border-radius:5px;padding:5px 2px;font-size:12px;cursor:pointer} .tabs button.on{background:#3a5bd9;color:#fff;border-color:#3a5bd9}
+.comm{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:5px 0 2px}
+.up{background:#1b2336;color:#ffe066;border:1px solid #ffe066;border-radius:5px;padding:3px 9px;font-size:12px;font-weight:700;cursor:pointer} .up.on{background:#ffe066;color:#111}
+#why{background:#141a28;color:#e6e9ef;border:1px solid #2b3550;border-radius:4px;font-size:11px;padding:2px}
+.chip{display:inline-block;font-size:10px;padding:0 6px;border-radius:8px;background:#26304a;color:#c8cfdd;margin:1px}
+.fu{display:inline-block;font-size:10px;padding:0 6px;border-radius:8px;background:#7048e8;color:#fff}
+#cf{display:flex;flex-direction:column;gap:3px;margin-top:4px} #cf input,#cf textarea{background:#141a28;color:#e6e9ef;border:1px solid #2b3550;border-radius:4px;font-size:11px;padding:3px;font-family:inherit}
+#cf button{align-self:flex-start;background:#3a5bd9;color:#fff;border:0;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer}
+.cm{font-size:11px;padding:3px 0;border-bottom:1px solid #1b2336}
 </style></head><body>
 <header><h1>Changing Sky <span style="font-weight:400;font-size:13px;color:#9aa4b8">— a community explorer of Vera C. Rubin Observatory alerts · not an official Rubin product</span></h1>
 <div class="sub">191,230 objects from the Vera C. Rubin Observatory, night of 2026-07-14 (UTC), via the Fink broker. Toggle alert types on the right, pick a sky survey on the left, click any marker for live images and light curve.</div>
-<div class="note">Rubin has been off-sky since a severe winter storm forced evacuation of the summit on 14–15 July 2026, so this is the most recent night of alerts. Images and light curves load live from Fink when you open an alert.</div></header>
+<div class="note">Rubin has been off-sky since a severe winter storm forced evacuation of the summit on 14–15 July 2026, so this is the most recent night of alerts. Images and light curves load live from Fink when you open an alert.</div><div id="acct"></div></header>
 <div id="wrap">
  <div class="panel" id="left"><div class="ph">Sky surveys</div><div id="surveys"></div>
   <div id="ovbox"><div id="ovname"></div>Overlay opacity <input id="ovop" type="range" min="0" max="1" step="0.05" value="0.5"><button class="more" id="ovoff">Remove overlay</button></div>
@@ -66,6 +80,8 @@ a{color:#8ab4ff} details{font-size:12px;color:#b8c0d0;margin-top:8px} summary{cu
   <div id="card"><button id="minbtn" class="cbtn" title="Minimise">–</button><button id="close" class="cbtn" title="Close (Esc)">✕</button><div id="cardbody"></div></div>
  </div>
  <div class="panel" id="right">
+  <div class="tabs"><button data-t="explore" class="on">Explore</button><button data-t="top">▲ Most wanted</button><button data-t="fu">Follow-up</button></div>
+  <div id="tab-explore">
   <div class="ph flash" id="cathead">▸ Alert types — click to show/hide</div><div id="cats" class="flash"></div>
   <div class="ph">Find</div>
   <input id="q" placeholder="Name, Rubin ID, or catalogue type (e.g. QSO, RR)">
@@ -73,6 +89,8 @@ a{color:#8ab4ff} details{font-size:12px;color:#b8c0d0;margin-top:8px} summary{cu
   <div id="nshow" class="sub"></div><div id="list"></div>
   <details><summary>How these alerts were chosen</summary>Collected from the Fink broker public API for the night of 2026-07-14 (UTC): six Fink science streams paged through the night, the latest objects in ~190 catalogue classes, and 378807 objects from 1-degree cone searches over the night's observed fields. Of 383,635 unique detections that night, artefacts were removed (subtraction dipoles, glint trails, saturated cores, SNR&nbsp;&lt;&nbsp;5), leaving 283,613; unidentified detections also had to have reliability ≥ 0.8 (194,279 left). One detection per object is shown (the strongest that night): 191,230 objects. Types combine Fink's cross-matches (TNS, VSX, blazar catalogues, HyperLEDA) with our own 1-arcsecond cross-match of every object against SIMBAD, Gaia DR3 (variability flag, star/quasar/galaxy probabilities, parallax) and the Milliquas quasar catalogue via the CDS XMatch service, because Fink's SIMBAD match was unavailable for this night. Asteroid alerts are not included: these query routes do not return Solar System detections. Fink recorded 403,821 objects that night, so this is a large but incomplete sample.</details>
   <details><summary>What am I looking at?</summary>Each alert compares a <b>new image</b> with a <b>template</b> built from earlier images of the same spot. The <b>difference</b> keeps only what changed (red: brighter now; blue: fainter). Each cutout is 6 arcseconds across. The light curve shows how the change evolves; colours mark Rubin's filters u g r i z y (ultraviolet → near-infrared). Fluxes are differences from the template, so they can be negative when a source has faded. The big sky view comes from other surveys and shows the surroundings.</details>
+  </div>
+  <div id="tab-top" style="display:none"></div><div id="tab-fu" style="display:none"></div>
  </div>
 </div>
 <script>
@@ -170,6 +188,7 @@ function openAlert(a,fly){
   <div class="row"><div class="stamps">${stamp(a.sid,'Science','New')}${stamp(a.sid,'Template','Before')}${stamp(a.sid,'Difference','Change')}</div>
   <div id="lc"><div class="sub" style="padding:10px">Loading light curve…</div></div></div>
   ${a.xm?'<div class="expl"><b>Catalogue:</b> '+a.xm+'</div>':''}
+  <div id="community"></div>
   <div style="font-size:11px">Open in: ${links.join(' · ')}</div>
   <details><summary>Details &amp; what this type means</summary><div class="expl">${c[3]}</div>
   <table class="m"><tr><td>Position (RA, Dec)</td><td>${a.ra.toFixed(5)}°, ${a.dec.toFixed(5)}°</td></tr>
@@ -179,7 +198,7 @@ function openAlert(a,fly){
   <tr><td>Found via</td><td>${a.src}</td></tr></table></details></div>`;
  $('card').style.display='block'; $('card').classList.remove('min'); $('minbtn').textContent='–';
  if(fly&&aladin){aladin.gotoRaDec(a.ra,a.dec); aladin.setFoV(0.08);}
- loadLC(a);
+ loadLC(a); loadCommunity(a);
 }
 function loadLC(a){
  const url=`${F}/sources?diaObjectId=${a.id}&columns=r:midpointMjdTai,r:band,r:psfFlux,r:psfFluxErr&output-format=json`;
@@ -199,6 +218,86 @@ $('close').onclick=closeCard;
 $('minbtn').onclick=()=>{ const m=$('card').classList.toggle('min'); $('minbtn').textContent=m?'+':'–'; $('minbtn').title=m?'Expand':'Minimise'; if(!m&&window.Plotly) try{Plotly.Plots.resize('lc')}catch(e){} };
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeCard(); });
 
+/* ---------- community (Supabase) ---------- */
+const SB_URL="https://lnfxxsxmkecwedheyvuq.supabase.co", SB_KEY="sb_publishable_dB2VlyI9Vu_P90EjAU0_Dw_YZRWz_Fj";
+const REASONS=[['rising_fast','Rising fast'],['no_host','No host galaxy'],['odd_colour','Odd colour'],['bright','Bright'],['unusual_lightcurve','Unusual light curve'],['possible_artefact','Possible artefact'],['other','Other']];
+const RLAB=Object.fromEntries(REASONS);
+let sb=null, me=null, SCORES=new Map(), MYV=new Map(), FU=new Map(), picksLayer=null;
+try{ sb=window.supabase.createClient(SB_URL,SB_KEY); }catch(e){ console.warn('community features offline',e); }
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function renderAcct(){
+ const el=$('acct'); if(!sb){el.innerHTML='';return;}
+ if(me){ el.innerHTML=`<span class="sub">Signed in as ${esc(me.email)}</span><button id="signout">Sign out</button>`; $('signout').onclick=async()=>{ await sb.auth.signOut(); }; }
+ else { el.innerHTML=`<button id="signin">Sign in to vote &amp; comment</button>`; $('signin').onclick=showSignin; }
+}
+function showSignin(){
+ if(!sb) return;
+ $('acct').innerHTML=`<form id="sf"><input id="sem" type="email" required placeholder="your@email"><button>Email me a sign-in link</button><button type="button" id="sx" title="Cancel">✕</button></form><div id="smsg" class="sub" style="width:100%;text-align:right"></div>`;
+ $('sx').onclick=renderAcct; $('sem').focus();
+ $('sf').onsubmit=async e=>{ e.preventDefault(); const email=$('sem').value.trim();
+   const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});
+   $('smsg').textContent=error?('Could not send: '+error.message):'Check your inbox — the link brings you back here, signed in.'; };
+}
+async function loadMyVotes(){ MYV=new Map(); if(!sb||!me) return;
+ const {data}=await sb.from('votes').select('alert_id,reason').eq('user_id',me.id); (data||[]).forEach(v=>MYV.set(v.alert_id,v.reason)); }
+async function refreshScores(){ if(!sb) return;
+ const {data,error}=await sb.from('alert_scores').select('*').order('votes',{ascending:false}).limit(2000);
+ if(error){ console.warn('scores',error); renderTop(error); return; }
+ SCORES=new Map((data||[]).map(r=>[r.alert_id,r]));
+ const f=await sb.from('followup').select('*'); FU=new Map(((f.data)||[]).map(r=>[r.alert_id,r]));
+ drawPicks(); renderTop(); renderFU();
+}
+function drawPicks(){ if(!aladin||!sb) return;
+ if(!picksLayer){ picksLayer=A.catalog({name:'Community picks',color:'#ffe066',sourceSize:22,shape:'circle'}); aladin.addCatalog(picksLayer); }
+ picksLayer.removeAll(); const s=[]; SCORES.forEach((r,id)=>{ const a=BYID.get(id); if(a&&r.votes>0) s.push(A.source(a.ra,a.dec,{id:a.id})); }); if(s.length) picksLayer.addSources(s);
+}
+function chipsFor(r){ if(!r||!r.reasons) return ''; return Object.entries(r.reasons).filter(([k])=>k!=='none').sort((x,y)=>y[1]-x[1]).map(([k,n])=>`<span class="chip">${esc(RLAB[k]||k)} ${n}</span>`).join(''); }
+function renderTop(err){ const box=$('tab-top'); if(!box) return;
+ if(!sb||err){ box.innerHTML='<div class="hint">Community features are unavailable right now.</div>'; return; }
+ const rows=[...SCORES.values()].filter(r=>r.votes>0).slice(0,100);
+ box.innerHTML='<div class="ph">Most wanted — ranked by community votes</div>'+(rows.length?'':'<div class="hint">No votes yet. Open an alert and press ▲ Upvote to be the first.</div>');
+ rows.forEach((r,i)=>{ const a=BYID.get(r.alert_id), c=a?catInfo[a.cat]:null, d=document.createElement('div'); d.className='item';
+  d.innerHTML=`<b>#${i+1} · ▲ ${r.votes}</b> ${a?`<span class="tag" style="background:${c[2]}">${esc(c[1])}</span><br>${esc(a.name||a.id)} · ${a.mag} mag ${a.band}`:esc(r.alert_id)}${r.artefact_flags?` · <span style="color:#ff8787">${r.artefact_flags} artefact flag${r.artefact_flags>1?'s':''}</span>`:''}${FU.has(r.alert_id)?` <span class="fu">${esc(FU.get(r.alert_id).status)}</span>`:''}<br>${chipsFor(r)}`;
+  if(a) d.onclick=()=>openAlert(a,true); box.appendChild(d); });
+}
+function renderFU(){ const box=$('tab-fu'); if(!box) return;
+ const rows=[...FU.values()].sort((x,y)=>(y.updated_at||'').localeCompare(x.updated_at||''));
+ box.innerHTML='<div class="ph">Follow-up shortlist</div><div class="expl">Alerts the community pushes to the top are checked by a moderator before anything is sent for follow-up — for example a report to the Transient Name Server, Las Cumbres Observatory education telescopes, or AAVSO observers.</div>'+(rows.length?'':'<div class="hint">Nothing shortlisted yet.</div>');
+ rows.forEach(r=>{ const a=BYID.get(r.alert_id), d=document.createElement('div'); d.className='item';
+   d.innerHTML=`<span class="fu">${esc(r.status)}</span> <b>${esc(a?(a.name||a.id):r.alert_id)}</b>${r.destination?' → '+esc(r.destination):''}${r.note?'<br>'+esc(r.note):''}`; if(a) d.onclick=()=>openAlert(a,true); box.appendChild(d); });
+}
+async function loadCommunity(a){
+ const box=$('community'); if(!box) return; if(!sb){ box.innerHTML=''; return; }
+ const r=SCORES.get(a.id), mine=MYV.has(a.id), f=FU.get(a.id);
+ box.innerHTML=`<div class="comm"><button id="up" class="up${mine?' on':''}" title="${me?'Vote for this alert to be followed up':'Sign in to vote'}">▲ ${mine?'Upvoted':'Upvote'} · ${r?r.votes:0}</button>
+  <select id="why" ${me?'':'disabled'} title="Why is it interesting?"><option value="">Why? (optional)</option>${REASONS.map(([k,l])=>`<option value="${k}" ${MYV.get(a.id)===k?'selected':''}>${l}</option>`).join('')}</select>
+  ${f?`<span class="fu">follow-up: ${esc(f.status)}</span>`:''}${chipsFor(r)}</div>
+  <details id="cmts"><summary>Comments</summary><div id="clist" class="sub">Loading…</div>
+  ${me?`<form id="cf"><input id="cname" maxlength="40" placeholder="Display name (shown publicly)" value="${esc(localStorage.getItem('cs_name')||'')}"><textarea id="ctext" maxlength="1000" rows="2" placeholder="What do you notice about this alert?"></textarea><button>Post comment</button></form>`:'<div class="sub">Sign in to comment.</div>'}</details>`;
+ $('up').onclick=async()=>{ if(!me){ showSignin(); return; }
+   if(MYV.has(a.id)){ const {error}=await sb.from('votes').delete().eq('alert_id',a.id).eq('user_id',me.id); if(error){ alert('Could not remove vote: '+error.message); return; } MYV.delete(a.id); }
+   else { const reason=$('why').value||null; const {error}=await sb.from('votes').insert({alert_id:a.id,reason}); if(error){ alert('Vote failed: '+error.message); return; } MYV.set(a.id,reason); }
+   await refreshScores(); if(sel===a) loadCommunity(a); };
+ $('why').onchange=async()=>{ if(!me||!MYV.has(a.id)) return; const reason=$('why').value||null;
+   await sb.from('votes').update({reason}).eq('alert_id',a.id).eq('user_id',me.id); MYV.set(a.id,reason); await refreshScores(); if(sel===a) loadCommunity(a); };
+ if(me) $('cf').onsubmit=async e=>{ e.preventDefault(); const body=$('ctext').value.trim(); if(!body) return;
+   const display_name=$('cname').value.trim()||null; if(display_name) localStorage.setItem('cs_name',display_name);
+   const {error}=await sb.from('comments').insert({alert_id:a.id,body,display_name}); if(error){ alert('Comment failed: '+error.message); return; } $('ctext').value=''; loadComments(a); };
+ loadComments(a);
+}
+async function loadComments(a){
+ const {data,error}=await sb.from('comments').select('id,display_name,body,created_at,user_id').eq('alert_id',a.id).order('created_at');
+ if(sel!==a) return; const box=$('clist'); if(!box) return;
+ if(error){ box.textContent='Could not load comments.'; return; }
+ $('cmts').querySelector('summary').textContent=`Comments (${data.length})`;
+ box.innerHTML=data.length?data.map(c=>`<div class="cm"><b>${esc(c.display_name||'anonymous')}</b> <span class="sub">${new Date(c.created_at).toLocaleString()}</span>${me&&c.user_id===me.id?` <a href="#" data-del="${c.id}">delete</a>`:(me?` <a href="#" data-rep="${c.id}">report</a>`:'')}<br>${esc(c.body)}</div>`).join(''):'No comments yet.';
+ box.querySelectorAll('[data-del]').forEach(x=>x.onclick=async e=>{ e.preventDefault(); await sb.from('comments').delete().eq('id',x.dataset.del); loadComments(a); });
+ box.querySelectorAll('[data-rep]').forEach(x=>x.onclick=async e=>{ e.preventDefault(); await sb.from('reports').insert({comment_id:+x.dataset.rep}); x.textContent='reported — thank you'; });
+}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b)); ['explore','top','fu'].forEach(t=>$('tab-'+t).style.display=(t===b.dataset.t?'block':'none')); });
+renderAcct();
+if(sb) sb.auth.onAuthStateChange((ev,session)=>{ me=session?session.user:null; renderAcct(); setTimeout(async()=>{ await loadMyVotes(); await refreshScores(); if(sel) loadCommunity(sel); },0); });
+
 /* ---------- sky ---------- */
 buildSurveys(); buildCats(); renderList();
 A.init.then(()=>{
@@ -208,6 +307,7 @@ A.init.then(()=>{
  CATS.forEach(([k])=>{ if(visible.has(k)) makeLayer(k); });
  aladin.on('objectClicked',o=>{ if(o&&o.data&&o.data.id){const a=BYID.get(o.data.id); if(a) openAlert(a,false);} });
  $('whole').onclick=()=>{closeCard(); aladin.gotoRaDec(301.869,-17.345); aladin.setFoV(150);};
+ drawPicks(); setInterval(refreshScores,60000);
  $('zoomsel').onclick=()=>{ if(sel){aladin.gotoRaDec(sel.ra,sel.dec); aladin.setFoV(0.08);} };
 });
 </script></body></html>
