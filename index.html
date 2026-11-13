@@ -47,7 +47,7 @@ table.m{font-size:12px;border-collapse:collapse} table.m td{padding:1px 10px 1px
 .dot{width:11px;height:11px;border-radius:6px;flex:0 0 auto} .cnt{margin-left:auto;color:#8a94a8;font-variant-numeric:tabular-nums}
 .cat.off{opacity:.35}
 .tile.na{opacity:.3;cursor:not-allowed} .offl{color:#ff8787}
-.deepfig a{display:block;position:relative} .deepfig a::after{content:'';position:absolute;left:50%;top:50%;width:12px;height:12px;margin:-7px 0 0 -7px;border:1px solid #ff6b6bcc;border-radius:50%;pointer-events:none}
+.deepfig a{display:block;position:relative;width:76px;height:76px;margin:0 auto} .deepfig svg.fp{position:absolute;left:0;top:0;width:76px;height:76px;pointer-events:none}
 .stamps img.deep{image-rendering:auto}
 #cullnote{display:none;position:absolute;top:40px;left:50%;transform:translateX(-50%);z-index:30;background:#141a28dd;border:1px solid #2b3550;border-radius:5px;padding:3px 9px;font-size:11px;color:#c8cfdd;white-space:nowrap}
 .cat.loading .cnt::after{content:' · loading…';color:#ffd43b}
@@ -249,13 +249,25 @@ function deepURL(a,layer){ return 'https://www.legacysurvey.org/viewer/cutout.jp
 function imgFlat(im){ try{ const w=im.naturalWidth||152, h=im.naturalHeight||152, cv=document.createElement('canvas'); cv.width=w; cv.height=h; const x=cv.getContext('2d'); x.drawImage(im,0,0);
   const d=x.getImageData(0,0,w,h).data; let lo=255, hi=0; for(let i=0;i<d.length;i+=4){ const v=d[i]+d[i+1]+d[i+2]; if(v<lo) lo=v; if(v>hi) hi=v; }
   return hi-lo<=6; }catch(e){ return false; } } /* the no-coverage JPEG is one uniform grey; any real sky has pixel-to-pixel noise */
+const DEEP_AS=64; /* arcsec across the deep stamp */
+function fpSVG(pts,dash){ const k=76/DEEP_AS; return '<polygon points="'+pts.map(p=>(38-p[0]*k).toFixed(2)+','+(38-p[1]*k).toFixed(2)).join(' ')+'" fill="none" stroke="#4dd4ff" stroke-width="1.1"'+(dash?' stroke-dasharray="2 2" opacity="0.7"':'')+'/>'; }
+function fpCorners(a,H){ /* Rubin cutout pixel edges -> (east, north) offsets in arcsec from the alert position */
+ const a1=H.PC1_1*(H.CDELT1||1), b1=H.PC1_2*(H.CDELT1||1), c1=H.PC2_1*(H.CDELT2||1), e1=H.PC2_2*(H.CDELT2||1), nx=H.NAXIS1, ny=H.NAXIS2;
+ let dra=H.CRVAL1-a.ra; if(dra>180) dra-=360; if(dra<-180) dra+=360; const ox=dra*Math.cos(a.dec*Math.PI/180)*3600, oy=(H.CRVAL2-a.dec)*3600;
+ return [[0.5,0.5],[nx+0.5,0.5],[nx+0.5,ny+0.5],[0.5,ny+0.5]].map(q=>{ const dx=q[0]-H.CRPIX1, dy=q[1]-H.CRPIX2; return [ox+(a1*dx+b1*dy)*3600, oy+(c1*dx+e1*dy)*3600]; }); }
+function drawFootprint(a){ const sv=document.querySelector('#deepst svg.fp'); if(!sv) return;
+ if(a._fpH){ sv.innerHTML=fpSVG(fpCorners(a,a._fpH),false); return; }
+ sv.innerHTML=fpSVG([[-3,-3],[3,-3],[3,3],[-3,3]],true);
+ if(!a.sid) return;
+ fetchFITS(a.sid,'Science').then(im=>{ const H=im.H; if(!(H.PC1_1||H.PC1_2)||!H.NAXIS1) return; a._fpH={PC1_1:H.PC1_1,PC1_2:H.PC1_2,PC2_1:H.PC2_1,PC2_2:H.PC2_2,CDELT1:H.CDELT1,CDELT2:H.CDELT2,CRPIX1:H.CRPIX1,CRPIX2:H.CRPIX2,CRVAL1:H.CRVAL1,CRVAL2:H.CRVAL2,NAXIS1:H.NAXIS1,NAXIS2:H.NAXIS2};
+   if(sel===a){ const s2=document.querySelector('#deepst svg.fp'); if(s2) s2.innerHTML=fpSVG(fpCorners(a,a._fpH),false); } }).catch(()=>{}); }
 function loadDeep(a){ const box=$('deepst'); if(!box) return; let i=0;
  box.innerHTML='<figure><div style="width:76px;height:76px;border-radius:3px;background:#0b0f19"></div><figcaption>Deep · loading</figcaption></figure>';
  const tryNext=()=>{ if(sel!==a) return; if(i>=DEEP.length){ box.innerHTML='<figure><div style="width:76px;height:76px;border-radius:3px;background:#0b0f19;color:#6c7690;font-size:9px;display:flex;align-items:center;justify-content:center;text-align:center">no deep<br>imaging here</div><figcaption>Deep</figcaption></figure>'; return; }
   const L=DEEP[i++], im=new Image(); im.crossOrigin='anonymous';
   im.onload=()=>{ if(sel!==a) return; if(imgFlat(im)) return tryNext();
-   box.innerHTML='<figure class="deepfig"><a target="_blank" title="'+L[1]+' image, 64″ across, north up; the circle marks the alert. Click to open the Legacy Survey viewer." href="https://www.legacysurvey.org/viewer?ra='+a.ra+'&dec='+a.dec+'&layer='+L[0]+'&zoom=15&mark='+a.ra+','+a.dec+'"></a><figcaption>Deep · '+L[1]+'</figcaption></figure>';
-   im.className='deep'; im.alt=L[1]; box.querySelector('a').appendChild(im); };
+   box.innerHTML='<figure class="deepfig"><a target="_blank" title="'+L[1]+' image, 64″ across, north up, east left. The square is the patch of sky shown in the Rubin cutouts (about 6″), turned the way the Rubin camera saw it. Click to open the Legacy Survey viewer." href="https://www.legacysurvey.org/viewer?ra='+a.ra+'&dec='+a.dec+'&layer='+L[0]+'&zoom=15&mark='+a.ra+','+a.dec+'"></a><figcaption>Deep · '+L[1]+' · 64″</figcaption></figure>';
+   im.className='deep'; im.alt=L[1]; const lk=box.querySelector('a'); lk.appendChild(im); lk.insertAdjacentHTML('beforeend','<svg class="fp" viewBox="0 0 76 76"></svg>'); drawFootprint(a); };
   im.onerror=tryNext; im.src=deepURL(a,L[0]); };
  tryNext(); }
 function stamp(sid,kind,label){
