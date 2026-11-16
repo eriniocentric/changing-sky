@@ -198,14 +198,11 @@ function pickMirror(){ /* first mirror to return the DSS properties file wins; I
  return new Promise(res=>{ let done=false; const fin=k=>{ if(done) return; done=true; if(k) useMirror(k); res(); };
   setTimeout(()=>fin(null),1500);
   ['irsa','esa'].forEach(k=>{ fetch(MIRRORS[k]['CDS/P/DSS2/color'][0]+'/properties',{cache:'no-store'}).then(r=>{ if(r.ok) fin(k); }).catch(()=>{}); }); }); }
-let MOC_OK=false; /* CDS registry reachable: Aladin can resolve survey IDs and choose among all copies itself */
-function mocCheck(){ return new Promise(res=>{ const c=new AbortController(); const t=setTimeout(()=>{ try{c.abort()}catch(e){} res(false); },1500);
- fetch('https://alasky.cds.unistra.fr/MocServer/query?ID=CDS/P/DSS2/color&get=id&fmt=json',{signal:c.signal,cache:'no-store'}).then(r=>{ clearTimeout(t); res(r.ok); }).catch(()=>{ clearTimeout(t); res(false); }); }); }
-const mirrorP=Promise.all([pickMirror(),mocCheck().then(ok=>{ MOC_OK=ok; })]);
+const mirrorP=pickMirror();
 let CDS_OK=null; /* null while the background check runs, then true/false */
 function cdsCheck(){ return new Promise(res=>{ const c=new AbortController(); const t=setTimeout(()=>{ try{c.abort()}catch(e){} res(false); },3500);
  fetch('https://alasky.cds.unistra.fr/DSS/DSSColor/properties',{signal:c.signal,cache:'no-store'}) /* a real HiPS file: the MocServer can answer while image tiles 404 */.then(r=>{ clearTimeout(t); res(r.ok); }).catch(()=>{ clearTimeout(t); res(false); }); }); }
-function hipsOf(id){ if(CDS_OK===true) return id; const m=MIRROR[id]; if(!m) return CDS_OK===null?id:null; if(MOC_OK) return id; try{ return A.imageHiPS(m[0],{name:id}); }catch(e){ return m[0]; } }
+function hipsOf(id){ if(CDS_OK===true) return id; const m=MIRROR[id]; if(!m) return CDS_OK===null?id:null; try{ return A.imageHiPS(m[0],{name:id}); }catch(e){ return m[0]; } }
 function enterMirrorMode(){
  const n=$('cdsnote'); if(n) n.style.display='block';
  document.querySelectorAll('.tile').forEach(x=>{ const m=MIRROR[x.dataset.id];
@@ -594,7 +591,7 @@ const aladinLoaded=()=>new Promise(res=>{ if(window.__aladinReady) res(); else w
 const cdsP=cdsCheck(); /* runs in parallel; the sky no longer waits for it */
 Promise.all([aladinLoaded().then(()=>A.init),mirrorP]).then(()=>{
  cdsP.then(ok=>{ CDS_OK=ok; if(!ok) enterMirrorMode(); });
- aladin=A.aladin('#aladin',{survey:MOC_OK?'CDS/P/DSS2/color':MIRROR['CDS/P/DSS2/color'][0],fov:150,target:'301.289 -17.363',projection:'AIT',cooFrame:'ICRSd',showReticle:false,showLayersControl:true,showFullscreenControl:true,showCooGridControl:true});
+ aladin=A.aladin('#aladin',{survey:MIRROR['CDS/P/DSS2/color'][0],fov:150,target:'301.289 -17.363',projection:'AIT',cooFrame:'ICRSd',showReticle:false,showLayersControl:true,showFullscreenControl:true,showCooGridControl:true});
  setBase(SURVEYS[0][1][0][0]);
  CATS.forEach(([k])=>{ if(visible.has(k)) ensureCat(k).then(()=>makeLayer(k)); });
  aladin.on('positionChanged',scheduleCull); aladin.on('zoomChanged',scheduleCull);
