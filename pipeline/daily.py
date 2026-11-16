@@ -5,7 +5,8 @@ that is the night's own alert, so one sweep captures the night exactly. Once a l
 ingested, objects seen again show the later alert instead, and the night can only be rebuilt with a much
 slower light-curve pass. Nights that were missed are therefore listed in missing.json, not fetched here.
 
-Usage: python pipeline/daily.py --raw <folder for raw tables> [--site <site folder>] [--night YYYYMMDD]
+Usage: python pipeline/daily.py --raw <folder for raw tables> [--site <site-data folder>] [--keep-raw N] [--night YYYYMMDD]
+Only the newest N raw nights are kept (default 7); published nights are listed in <site>/data/nights.json.
 """
 import argparse, datetime as dt, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -26,10 +27,21 @@ def fink_nights():
             print('statistics failed for', month, ex, flush=True)
     return out
 
+def prune_raw(raw, keep, log=print):
+    """Keep only the newest `keep` nights of raw and cross-match tables (the raw branch is not an archive; Fink is)."""
+    nights = sorted({f.split('_')[1][:8] for f in os.listdir(raw) if f.startswith(('raw_', 'xm_')) and f[-8:] in ('.parquet', 'ats.json')})
+    for n in nights[:-keep] if keep > 0 else []:
+        for f in os.listdir(raw):
+            if f.startswith((f'raw_{n}', f'xm_{n}')):
+                os.remove(os.path.join(raw, f))
+        log('removed raw tables for', n, '(older than the newest', keep, 'nights)')
+
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--raw', required=True); ap.add_argument('--site'); ap.add_argument('--night')
+    ap = argparse.ArgumentParser(); ap.add_argument('--raw', required=True); ap.add_argument('--site'); ap.add_argument('--night'); ap.add_argument('--keep-raw', type=int, default=7)
     a = ap.parse_args(); os.makedirs(a.raw, exist_ok=True)
     have = {f[4:12] for f in os.listdir(a.raw) if f.startswith('raw_') and f.endswith('.parquet')}
+    if a.site and os.path.exists(os.path.join(a.site, 'data', 'nights.json')):
+        have |= {n['night'] for n in json.load(open(os.path.join(a.site, 'data', 'nights.json'))).get('nights', [])}
     stats = fink_nights()
     today = utcnow().strftime('%Y%m%d')
     newest = max(stats) if stats else None
@@ -68,6 +80,7 @@ def main():
                     except Exception as ex:
                         log('BUILD FAILED for', night, ':', repr(ex))
                         raise
+    prune_raw(a.raw, a.keep_raw, log)
     missing = sorted(n for n in stats if n >= FIRST_NIGHT and n not in have and n != today)
     json.dump({'missing_nights': missing, 'checked_utc': utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')}, open(os.path.join(a.raw, 'missing.json'), 'w'))
     log('nights in Fink since', FIRST_NIGHT, 'not captured:', missing)
