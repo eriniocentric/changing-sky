@@ -32,7 +32,10 @@ def main():
     have = {f[4:12] for f in os.listdir(a.raw) if f.startswith('raw_') and f.endswith('.parquet')}
     stats = fink_nights()
     today = utcnow().strftime('%Y%m%d')
-    night = a.night or today
+    newest = max(stats) if stats else None
+    # Prefer the newest night Fink lists that is not stored yet (it may have been ingested after yesterday's runs);
+    # otherwise try today's date, which Fink's statistics may not list yet.
+    night = a.night or (newest if newest and newest not in have and newest >= FIRST_NIGHT else today)
     log = lambda *x: print(*x, flush=True)
     log('Fink nights known:', len(stats), '| newest in statistics:', max(stats) if stats else None, '| already captured:', sorted(have)[-3:])
     if night in have:
