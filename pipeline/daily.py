@@ -1,11 +1,11 @@
-"""Daily job for Changing Sky. Version 1: capture the newest Rubin night from Fink as a raw table.
+"""Daily job for Changing Sky: capture the newest Rubin night from Fink as a raw table, then (with --site) build its tiles.
 
 Why it must run every day: Fink's cone search returns each object's LATEST alert. For the newest night
 that is the night's own alert, so one sweep captures the night exactly. Once a later night has been
 ingested, objects seen again show the later alert instead, and the night can only be rebuilt with a much
 slower light-curve pass. Nights that were missed are therefore listed in missing.json, not fetched here.
 
-Usage: python pipeline/daily.py --raw <folder for raw tables> [--night YYYYMMDD]
+Usage: python pipeline/daily.py --raw <folder for raw tables> [--site <site folder>] [--night YYYYMMDD]
 """
 import argparse, datetime as dt, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -27,7 +27,7 @@ def fink_nights():
     return out
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--raw', required=True); ap.add_argument('--night')
+    ap = argparse.ArgumentParser(); ap.add_argument('--raw', required=True); ap.add_argument('--site'); ap.add_argument('--night')
     a = ap.parse_args(); os.makedirs(a.raw, exist_ok=True)
     have = {f[4:12] for f in os.listdir(a.raw) if f.startswith('raw_') and f.endswith('.parquet')}
     stats = fink_nights()
@@ -57,6 +57,14 @@ def main():
                 df[df['in_night']].drop(columns=['in_night']).to_parquet(os.path.join(a.raw, f'raw_{night}.parquet'))
                 json.dump(st, open(os.path.join(a.raw, f'raw_{night}.stats.json'), 'w'))
                 have.add(night); log('saved', night, st['objects'], 'objects')
+                if a.site:
+                    import build_night
+                    try:
+                        e = build_night.build(night, a.raw, a.site, log=log)
+                        log('built', night, e['n'], 'alerts in', e['tiles'], 'tiles; cross-match complete:', e['xm'])
+                    except Exception as ex:
+                        log('BUILD FAILED for', night, ':', repr(ex))
+                        raise
     missing = sorted(n for n in stats if n >= FIRST_NIGHT and n not in have and n != today)
     json.dump({'missing_nights': missing, 'checked_utc': utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')}, open(os.path.join(a.raw, 'missing.json'), 'w'))
     log('nights in Fink since', FIRST_NIGHT, 'not captured:', missing)
