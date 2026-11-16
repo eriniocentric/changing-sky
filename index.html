@@ -182,10 +182,10 @@ const MIRROR={ // ESA ESASky copies used when CDS Strasbourg is unreachable
  'CDS/P/2MASS/color':['https://skies.esac.esa.int/2MASSColor',null],
  'CDS/P/allWISE/color':['https://skies.esac.esa.int/AllWISEColor','https://skies.esac.esa.int/AllWISEColor/preview.jpg'],
  'CDS/P/SDSS9/color':['https://skies.esac.esa.int/SDSS9Color','https://skies.esac.esa.int/SDSS9Color/preview.jpg']};
-let CDS_OK=true;
+let CDS_OK=null; /* null while the background check runs, then true/false */
 function cdsCheck(){ return new Promise(res=>{ const c=new AbortController(); const t=setTimeout(()=>{ try{c.abort()}catch(e){} res(false); },3500);
  fetch('https://alasky.cds.unistra.fr/DSS/DSSColor/properties',{signal:c.signal,cache:'no-store'}) /* a real HiPS file: the MocServer can answer while image tiles 404 */.then(r=>{ clearTimeout(t); res(r.ok); }).catch(()=>{ clearTimeout(t); res(false); }); }); }
-function hipsOf(id){ if(CDS_OK) return id; const m=MIRROR[id]; if(!m) return null; try{ return A.imageHiPS(m[0],{name:id}); }catch(e){ return m[0]; } }
+function hipsOf(id){ if(CDS_OK===true) return id; const m=MIRROR[id]; if(!m) return CDS_OK===null?id:null; try{ return A.imageHiPS(m[0],{name:id}); }catch(e){ return m[0]; } }
 function enterMirrorMode(){
  const n=$('cdsnote'); if(n) n.style.display='block';
  document.querySelectorAll('.tile').forEach(x=>{ const m=MIRROR[x.dataset.id];
@@ -193,12 +193,12 @@ function enterMirrorMode(){
    else { const im=x.querySelector('img.thumb'); if(im&&m[1]) im.src=m[1]; x.title='Served from the ESA ESASky mirror while CDS is offline'; } });
 }
 function setBase(id){
- if(!CDS_OK&&!MIRROR[id]) return;
+ if(CDS_OK===false&&!MIRROR[id]) return;
  try{aladin.setBaseImageLayer(hipsOf(id));}catch(e){try{aladin.setImageSurvey(id);}catch(e2){console.warn(e2)}}
  document.querySelectorAll('.tile').forEach(x=>x.classList.toggle('on',x.dataset.id===id));
 }
 function setOverlay(id,title,btn){
- if(!CDS_OK&&!MIRROR[id]) return;
+ if(CDS_OK===false&&!MIRROR[id]) return;
  try{
   ovLayer=aladin.setOverlayImageLayer(hipsOf(id),'overlay');
   const op=parseFloat($('ovop').value); if(ovLayer&&ovLayer.setOpacity) ovLayer.setOpacity(op);
@@ -378,7 +378,7 @@ function svgSED(cat,rub,W){ W=Math.max(260,W||320); const H=170, L=42, R=8, T=18
  return s+'</svg>'; }
 async function loadSED(a,box){ box.innerHTML='<div class="sub" style="padding:8px">Asking CDS VizieR for archival photometry…</div>';
  const rub=rubinNow(a._lc); let cat=[], note='';
- if(typeof CDS_OK!=='undefined'&&!CDS_OK) note='Archival photometry unavailable (CDS offline); only Rubin points are shown.';
+ if(typeof CDS_OK!=='undefined'&&CDS_OK===false) note='Archival photometry unavailable (CDS offline); only Rubin points are shown.';
  else { try{ const c=new AbortController(), t=setTimeout(()=>c.abort(),15000);
      const r=await fetch(`https://vizier.cds.unistra.fr/viz-bin/sed?-c=${a.ra}%20${a.dec}&-c.rs=1.5`,{signal:c.signal}); clearTimeout(t);
      if(!r.ok) throw new Error('HTTP '+r.status);
@@ -571,9 +571,10 @@ if(sb) sb.auth.onAuthStateChange((ev,session)=>{ me=session?session.user:null; r
 /* ---------- sky ---------- */
 buildSurveys(); buildCats(); renderList();
 const aladinLoaded=()=>new Promise(res=>{ if(window.__aladinReady) res(); else window.addEventListener('aladin-ready',res,{once:true}); });
-Promise.all([aladinLoaded().then(()=>A.init),cdsCheck()]).then(([_,ok])=>{
- CDS_OK=ok; if(!ok) enterMirrorMode();
- aladin=A.aladin('#aladin',{survey:ok?SURVEYS[0][1][0][0]:MIRROR['CDS/P/DSS2/color'][0],fov:150,target:'301.289 -17.363',projection:'AIT',cooFrame:'ICRSd',showReticle:false,showLayersControl:true,showFullscreenControl:true,showCooGridControl:true});
+const cdsP=cdsCheck(); /* runs in parallel; the sky no longer waits for it */
+aladinLoaded().then(()=>A.init).then(()=>{
+ cdsP.then(ok=>{ CDS_OK=ok; if(!ok) enterMirrorMode(); });
+ aladin=A.aladin('#aladin',{survey:MIRROR['CDS/P/DSS2/color'][0],fov:150,target:'301.289 -17.363',projection:'AIT',cooFrame:'ICRSd',showReticle:false,showLayersControl:true,showFullscreenControl:true,showCooGridControl:true});
  setBase(SURVEYS[0][1][0][0]);
  CATS.forEach(([k])=>{ if(visible.has(k)) ensureCat(k).then(()=>makeLayer(k)); });
  aladin.on('positionChanged',scheduleCull); aladin.on('zoomChanged',scheduleCull);
