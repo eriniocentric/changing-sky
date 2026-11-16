@@ -121,6 +121,7 @@ header{position:relative}
   <div class="ph flash" id="cathead">▸ Alert types — click to show/hide</div><div id="cats" class="flash"></div>
   <div class="ph">🛰 Satellites</div>
   <label class="cat" style="cursor:pointer"><input type="checkbox" id="satbox"> <span class="dot" style="background:#ff922b"></span>Predicted sunlit satellite tracks<span class="cnt" id="satcnt"></span></label>
+  <label class="cat" style="cursor:pointer" title="Alerts that people have upvoted for a closer look. Sign in and press ▲ Upvote on an alert to add one."><input type="checkbox" id="picksbox"> <span class="dot" style="background:#ffe066"></span>★ Community picks<span class="cnt" id="pickscnt"></span></label>
   <details><summary>What the satellite layer shows</summary>Orange lines are the paths of catalogued satellites that crossed one of Rubin's fields while lit by the Sun, during the ~30-second exposure, predicted from public orbital elements (Space-Track.org) seen from Cerro Pachón. Click a label to see which satellite it was. Satellites in Earth's shadow reflect no sunlight and are not drawn. In July (southern winter) almost all low satellites are in shadow during the night, so most tracks here belong to distant geostationary and high-orbit objects. Rubin itself suppresses alerts from known satellites; the <b>Rubin-flagged glint trails</b> alert type shows flashes its pipeline flagged anyway.</details>
   <div class="ph">Find</div>
   <input id="q" placeholder="Name, Rubin ID, or catalogue type (e.g. QSO, RR)">
@@ -537,9 +538,10 @@ async function refreshScores(){ if(!sb) return;
  const f=await sb.from('followup').select('*'); FU=new Map(((f.data)||[]).map(r=>[r.alert_id,r]));
  drawPicks(); renderTop(); renderFU();
 }
-function drawPicks(){ if(!aladin||!sb) return;
- if(!picksLayer){ picksLayer=A.catalog({name:'Community picks',color:'#ffe066',sourceSize:22,shape:'circle'}); aladin.addCatalog(picksLayer); }
- picksLayer.removeAll(); const s=[]; SCORES.forEach((r,id)=>{ const a=BYID.get(id); if(a&&r.votes>0) s.push(A.source(a.ra,a.dec,{id:a.id})); }); if(s.length) picksLayer.addSources(s);
+function drawPicks(){ let np=0; SCORES.forEach(r=>{ if(r.votes>0) np++; }); const pc=$('pickscnt'); if(pc) pc.textContent=np?np.toLocaleString():'';
+ if(!aladin||!sb) return; const on=!!($('picksbox')&&$('picksbox').checked);
+ if(!picksLayer){ if(!on) return; picksLayer=A.catalog({name:'Community picks',color:'#ffe066',sourceSize:22,shape:'circle'}); aladin.addCatalog(picksLayer); }
+ picksLayer.removeAll(); if(!on) return; const s=[]; SCORES.forEach((r,id)=>{ const a=BYID.get(id); if(a&&r.votes>0) s.push(A.source(a.ra,a.dec,{id:a.id})); }); if(s.length) picksLayer.addSources(s);
 }
 function chipsFor(r){ if(!r||!r.reasons) return ''; return Object.entries(r.reasons).filter(([k])=>k!=='none').sort((x,y)=>y[1]-x[1]).map(([k,n])=>`<span class="chip">${esc(RLAB[k]||k)} ${n}</span>`).join(''); }
 function renderTop(err){ const box=$('tab-top'); if(!box) return;
@@ -606,7 +608,7 @@ Promise.all([aladinLoaded().then(()=>A.init),mirrorP]).then(()=>{
  aladin.on('objectClicked',o=>{ if(o&&o.data&&o.data.id){const a=BYID.get(o.data.id); if(a) openAlert(a,false);} });
  $('whole').onclick=()=>{closeCard(); aladin.gotoRaDec(301.289,-17.363); aladin.setFoV(150);};
  drawPicks(); setInterval(refreshScores,60000);
- $('satcnt').textContent=SATS.length;
+ $('satcnt').textContent=SATS.length; $('picksbox').onchange=drawPicks;
  let satOv=null, satLab=null;
  $('satbox').onchange=()=>{ const on=$('satbox').checked;
   if(on&&!satOv){ satOv=A.graphicOverlay({name:'Satellite tracks',color:'#ff922b',lineWidth:2}); aladin.addOverlay(satOv);
