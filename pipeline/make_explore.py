@@ -49,12 +49,12 @@ function timeOK(a){ if(!SELN.has(a.night)) return false; if(!TIME.on) return tru
  if(m>TIME.t+0.0002) return false;
  if(TIME.trail==='visit') return m>TIME.t-0.0002; if(TIME.trail==='hour') return m>TIME.t-1/24; if(TIME.trail==='night') return a.night===TIME.night; return true; }
 let densOv=null;
-function drawDensity(rad){ if(!aladin||!window.A) return; const on=rad>TILE_RAD&&visible.size>0;
- if(!densOv){ try{ densOv=A.graphicOverlay({name:'Alert density (zoom in for every alert)',color:'#8fa3c7',lineWidth:1}); aladin.addOverlay(densOv); }catch(e){ return; } }
+function drawDensity(rad){ if(!aladin||!window.A) return; const db=$('densbox'); const on=rad>TILE_RAD&&visible.size>0&&!!(db&&db.checked);
+ if(!densOv){ try{ densOv=A.graphicOverlay({name:'Where more alerts are',color:'rgba(170,185,215,0.32)',lineWidth:1}); aladin.addOverlay(densOv); }catch(e){ return; } }
  try{ densOv.removeAll(); }catch(e){} if(!on) return; const tot={};
  SELN.forEach(n=>{ const dv=DENSV[n]; if(!dv) return; Object.keys(dv).forEach(t=>{ const e=dv[t]; let c=0; visible.forEach(k=>{ c+=(e[2][k]||0); }); if(c){ if(!tot[t]) tot[t]=[e[0],e[1],0]; tot[t][2]+=c; } }); });
  const vals=Object.keys(tot).map(k=>tot[k]); if(!vals.length) return; const mx=Math.max.apply(null,vals.map(v=>v[2]));
- vals.forEach(v=>{ try{ densOv.add(A.circle(v[0],v[1],0.2+1.2*Math.sqrt(v[2]/mx))); }catch(e){} }); }
+ vals.forEach(v=>{ try{ densOv.add(A.circle(v[0],v[1],0.12+0.6*Math.sqrt(v[2]/mx))); }catch(e){} }); }
 function mjdUTC(m){ const d=new Date((m-40587)*86400000-37000); return d.toISOString().replace('T',' ').slice(0,16)+' UTC'; }
 function applyTime(){ const v=TIME.visits[TIME.i]; TIME.t=v?v[0]:0; TIME.night=v?v[1]:null; TIME.trail=$('trail').value;
  $('tlabel').textContent=v?('Exposure '+(TIME.i+1)+' of '+TIME.visits.length+' · '+mjdUTC(v[0])):'No exposure times for this selection';
@@ -67,7 +67,8 @@ function wireTime(){
  $('trail').onchange=applyTime;
  $('playbtn').onclick=()=>{ if(TIME.play){ stopPlay(); return; } if(TIME.i>=TIME.visits.length-1) TIME.i=0; $('playbtn').textContent='⏸';
    TIME.play=setInterval(()=>{ if(TIME.i>=TIME.visits.length-1){ stopPlay(); return; } TIME.i++; $('tslider').value=TIME.i; applyTime(); },700); };
- $('nightsel').onchange=()=>selectNights($('nightsel').value); }
+ $('nightsel').onchange=()=>selectNights($('nightsel').value);
+ $('densbox').onchange=()=>cullAll(); }
 function nightSummary(){ const L=NIGHTS.filter(n=>SELN.has(n.night)); let shown=0, fink=0; const miss=[];
  L.forEach(n=>{ shown+=n.n; fink+=(n.fink&&n.fink.fink_objects)||0; if(n.xm&&!n.xm.milliquas) miss.push(nightLabel(n.night)); });
  return shown.toLocaleString()+' alerts after quality cuts'+(fink?' (Fink recorded '+fink.toLocaleString()+' objects)':'')+
@@ -89,7 +90,7 @@ rep('__STORE_PLACEHOLDER__\n', STORE)
 # ---------- 2. layers and culling ----------
 rep(" if(!aladin||layers[k]||!BYCAT[k]) return; const c=catInfo[k];", " if(!aladin||layers[k]) return; const c=catInfo[k];")
 rep(" const rad=Math.min(180,fov*0.75); let capped=false;\n visible.forEach(k=>{ const L=layers[k], arr=BYCAT[k]; if(!L||!arr) return;\n   let s=[]; for(const a of arr){ if(rad>=90||sepDeg(a.ra,a.dec,ra0,de0)<rad){ s.push(a); if(s.length>=MAXPER){ capped=capped||arr.length>MAXPER; break; } } }\n   L.removeAll(); L.addSources(s.map(a=>A.source(a.ra,a.dec,{id:a.id}))); });\n const n=$('cullnote'); if(n) n.style.display=capped?'block':'none';",
-    " const rad=Math.min(180,fov*0.75); let capped=false; sortDirty(); loadTilesInView(ra0,de0,rad);\n visible.forEach(k=>{ const L=layers[k], arr=BYCAT[k]; if(!L) return; L.removeAll(); if(!arr) return;\n   let s=[]; for(const a of arr){ if(!timeOK(a)) continue; if(rad>=90||sepDeg(a.ra,a.dec,ra0,de0)<rad){ s.push(a); if(s.length>=MAXPER){ capped=true; break; } } }\n   L.addSources(s.map(a=>A.source(a.ra,a.dec,{id:a.key}))); });\n drawDensity(rad);\n const n=$('cullnote'); if(n){ const zo=rad>TILE_RAD&&visible.size>0; n.style.display=(capped||zo)?'block':'none';\n   n.textContent=zo?'Zoomed out: showing the top-ranked alerts of each type. Grey circles show where the rest are; zoom in to load every alert.':'Showing the strongest 4,000 alerts per type in view — zoom in to see more.'; }")
+    " const rad=Math.min(180,fov*0.75); let capped=false; sortDirty(); loadTilesInView(ra0,de0,rad);\n visible.forEach(k=>{ const L=layers[k], arr=BYCAT[k]; if(!L) return; L.removeAll(); if(!arr) return;\n   let s=[]; for(const a of arr){ if(!timeOK(a)) continue; if(rad>=90||sepDeg(a.ra,a.dec,ra0,de0)<rad){ s.push(a); if(s.length>=MAXPER){ capped=true; break; } } }\n   L.addSources(s.map(a=>A.source(a.ra,a.dec,{id:a.key}))); });\n drawDensity(rad);\n const n=$('cullnote'); if(n){ const zo=rad>TILE_RAD&&visible.size>0; n.style.display=(capped||zo)?'block':'none';\n   n.textContent=zo?'Zoomed out: showing the top-ranked alerts of each type. Zoom in to load every alert'+(($('densbox')&&$('densbox').checked)?' (faint circles mark where more are).':'.'):'Showing the strongest 4,000 alerts per type in view — zoom in to see more.'; }")
 
 # ---------- 3. category list, search list, clicks ----------
 rep("ensureCat(k).then(()=>{ d.classList.remove('loading'); if(!visible.has(k)) return; if(layers[k]) layers[k].show(); else makeLayer(k); renderList(); });",
@@ -115,6 +116,7 @@ rep('<div class="ph flash" id="cathead">',
     '  <div id="timerow" style="display:none"><button id="playbtn" title="Play / pause">▶</button><input type="range" id="tslider" min="0" max="0" value="0">'
     '<select id="trail" title="Which alerts to keep on the sky"><option value="visit">this exposure only</option><option value="hour">the last hour</option>'
     '<option value="night" selected>this night so far</option><option value="all">everything so far</option></select><div id="tlabel" class="sub"></div></div>\n'
+    '  <label class="cat" style="cursor:pointer" title="When zoomed out, only the strongest alerts are drawn. Circles mark sky patches holding more of the selected types; bigger means more. Zoom in to see them all."><input type="checkbox" id="densbox"> ◌ Show where more alerts are (zoomed out)</label>\n'
     '  <div class="ph flash" id="cathead">')
 rep('#cullnote{', '#nightrow select{width:100%;background:#141a28;color:#e6e9ef;border:1px solid #2b3550;border-radius:5px;padding:3px;font-size:12px}\n'
     '#nightinfo{font-size:10.5px;margin:2px 0 4px}\n'
