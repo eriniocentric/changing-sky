@@ -54,6 +54,8 @@ table.m{font-size:12px;border-collapse:collapse} table.m td{padding:1px 10px 1px
 #timerow{flex-wrap:wrap;gap:4px;align-items:center;margin:2px 0 6px} #timerow input[type=range]{flex:1;min-width:120px}
 #timerow button{background:#141a28;color:#e6e9ef;border:1px solid #2b3550;border-radius:5px;padding:1px 8px;cursor:pointer}
 #timerow select{background:#141a28;color:#c8cfdd;border:1px solid #2b3550;border-radius:5px;font-size:11px} #tlabel{width:100%;font-size:10.5px}
+#conenote{display:none;position:absolute;top:66px;left:50%;transform:translateX(-50%);z-index:30;background:#141a28ee;border:1px solid #2b3550;border-radius:5px;padding:4px 10px;font-size:11px;color:#c8cfdd;max-width:min(640px,80%)}
+#conenote a{color:#74c0fc}
 #cullnote{display:none;position:absolute;top:40px;left:50%;transform:translateX(-50%);z-index:30;background:#141a28dd;border:1px solid #2b3550;border-radius:5px;padding:3px 9px;font-size:11px;color:#c8cfdd;white-space:nowrap}
 .cat.loading .cnt::after{content:' · loading…';color:#ffd43b}
 #cathead.flash{font-weight:700;color:#ffd43b;font-size:12px;animation:pulse 1.1s ease-in-out infinite}
@@ -112,7 +114,7 @@ header{position:relative}
   <details><summary>About these surveys</summary>Click a tile to change the background sky. Use ◐ to lay a second survey on top and fade between them — for example, compare an optical galaxy with its X-ray or radio emission. Sky coverage is shown under each name; outside it the map is blank.</details>
  </div>
  <div id="center"><div id="aladin"></div>
-  <div id="topbar"><button id="whole">Whole sky</button><button id="zoomsel">Zoom to selected</button></div>
+  <div id="topbar"><button id="whole">Whole sky</button><button id="zoomsel">Zoom to selected</button><button id="conebtn" style="display:none" title="Ask Fink for every alert it has ever issued in this view, of the types you have selected. Nothing is stored here.">🔎 All alerts here (Fink, all dates)</button></div><div id="conenote"></div>
   <div id="cullnote">Showing the strongest 4,000 alerts per type in view — zoom in to see more. The list on the right includes all of them.</div>
   <div id="card"><button id="minbtn" class="cbtn" title="Minimise">–</button><button id="close" class="cbtn" title="Close (Esc)">✕</button><div id="cardbody"></div></div>
  </div>
@@ -184,6 +186,48 @@ function drawDensity(rad){ if(!aladin||!window.A) return; const db=$('densbox');
  SELN.forEach(n=>{ const dv=DENSV[n]; if(!dv) return; Object.keys(dv).forEach(t=>{ const e=dv[t]; let c=0; visible.forEach(k=>{ c+=(e[2][k]||0); }); if(c){ if(!tot[t]) tot[t]=[e[0],e[1],0]; tot[t][2]+=c; } }); });
  const vals=Object.keys(tot).map(k=>tot[k]); if(!vals.length) return; const mx=Math.max.apply(null,vals.map(v=>v[2]));
  vals.forEach(v=>{ try{ densOv.add(A.circle(v[0],v[1],0.12+0.6*Math.sqrt(v[2]/mx))); }catch(e){} }); }
+/* ---------- search this area in Fink (all dates, nothing stored here) ---------- */
+const CONE_MAX=0.75; /* deg: largest search radius; the button appears when the view radius is at most this */
+const FCOLS='r:diaObjectId,r:diaSourceId,r:ra,r:dec,r:band,r:psfFlux,r:snr,r:reliability,r:midpointMjdTai,r:isDipole,r:glint_trail,r:pixelFlags_saturatedCenter,r:trailLength,f:xm_vsx_Type,f:xm_tns_fullname,f:xm_tns_type,f:xm_x4lac_type,f:xm_x3hsp_type,f:xm_mangrove_HyperLEDA_name,f:xm_legacydr8_pstar,f:firstDiaSourceMjdTaiFink';
+let FINKRES=[], FLAYERS={}, FCONE=null, coneBusy=false;
+function fclean(v){ if(v===null||v===undefined) return null; const s=String(v); return (s===''||s==='nan'||s==='NaN'||s==='None'||s==='Fail'||s==='Unknown'||s==='null')?null:s; }
+function fnight(m){ return new Date((m-40587)*86400000-37000).toISOString().slice(0,10).replace(/-/g,''); }
+function finkClassify(r){ /* same quality cuts as the nightly build; types from Fink's own cross-matches only (no Gaia/SIMBAD) */
+ if(r['r:isDipole']||r['r:pixelFlags_saturatedCenter']) return null;
+ if((+r['r:snr']||0)<5) return null;
+ if(r['r:glint_trail']) return ['glint',null,'Rubin glint-trail flag'];
+ const vsx=fclean(r['f:xm_vsx_Type']), tns=fclean(r['f:xm_tns_fullname']), tt=fclean(r['f:xm_tns_type']), bl=fclean(r['f:xm_x4lac_type'])||fclean(r['f:xm_x3hsp_type']), led=fclean(r['f:xm_mangrove_HyperLEDA_name']), ps=+r['f:xm_legacydr8_pstar'];
+ if(tt&&tt!=='AGN'&&tt!=='Varstar'&&tt!=='CV') return ['sn',tns,tt];
+ if(tt==='AGN'||bl||vsx==='AGN'||vsx==='BLLAC'||vsx==='CV|QSO') return ['agn',tns,vsx?'VSX '+vsx:(bl||'AGN')];
+ if((vsx&&vsx!=='SN Ia'&&vsx!=='SN Ia-pec')||tt==='Varstar'||tt==='CV') return ['var',tns,vsx?'VSX '+vsx:tt];
+ if(tns) return ['at',tns,'TNS transient'];
+ if(ps>0.5) return ['star',null,'Legacy Survey point source'];
+ if(led) return ['gal',null,'HyperLEDA '+led];
+ if((+r['r:reliability']||0)<0.8) return null;
+ return ['unk',null,null]; }
+function finkObj(r){ const c=finkClassify(r); if(!c) return null; const id=String(r['r:diaObjectId']), m=+r['r:midpointMjdTai'], f=Math.abs(+r['r:psfFlux']||0);
+ const a={id:id,sid:String(r['r:diaSourceId']),ra:+r['r:ra'],dec:+r['r:dec'],cat:c[0],name:c[1],band:r['r:band'],mag:+(31.4-2.5*Math.log10(Math.max(f,1))).toFixed(2),
+  snr:+(+r['r:snr']).toFixed(1),rel:r['r:reliability']==null?null:+(+r['r:reliability']).toFixed(2),mjd:+m.toFixed(4),
+  xm:(c[2]?c[2]+' · ':'')+'type from Fink cross-matches',age:null,src:'Fink area search (all dates)',ss:null};
+ const f0=+r['f:firstDiaSourceMjdTaiFink']; if(f0) a.age=Math.max(0,Math.floor(m-f0)); a.night=fnight(m); a.key=id+'@fink'; a.fink=true; return a; }
+function drawFink(){ if(!aladin) return; Object.keys(FLAYERS).forEach(k=>FLAYERS[k].removeAll());
+ FINKRES.forEach(a=>{ if(!visible.has(a.cat)) return; if(!FLAYERS[a.cat]){ const c=catInfo[a.cat]; FLAYERS[a.cat]=A.catalog({name:'Area search: '+c[1],color:c[2],sourceSize:12,shape:'square'}); aladin.addCatalog(FLAYERS[a.cat]); }
+   FLAYERS[a.cat].addSources([A.source(a.ra,a.dec,{id:a.key})]); }); }
+function showFinkSummary(){ const n=$('conenote'); if(!FCONE){ n.style.display='none'; return; } const cnt={}; FINKRES.forEach(a=>{ if(visible.has(a.cat)) cnt[a.cat]=(cnt[a.cat]||0)+1; });
+ const parts=Object.keys(cnt).map(k=>cnt[k].toLocaleString()+' '+catInfo[k][1].toLowerCase()); n.style.display='block';
+ n.innerHTML='<b>Area search</b> (Fink, every date since Oct 2025, within '+(FCONE.rad*60).toFixed(0)+'′): '+FCONE.n.toLocaleString()+' objects; of the selected types '+(parts.length?parts.join(', '):'none')+' — shown as squares. Types use Fink\'s own cross-matches, so they are rougher than the nightly ones. <a href="#" id="coneclear">Clear</a>';
+ $('coneclear').onclick=e=>{ e.preventDefault(); clearFink(true); }; }
+function clearFink(hide){ FINKRES.forEach(a=>BYKEY.delete(a.key)); FINKRES=[]; Object.keys(FLAYERS).forEach(k=>FLAYERS[k].removeAll()); if(hide){ FCONE=null; $('conenote').style.display='none'; } }
+async function coneSearch(){ if(coneBusy||!aladin) return; let ra0,de0,fov; try{ [ra0,de0]=aladin.getRaDec(); fov=Math.max.apply(null,aladin.getFov()); }catch(e){ return; }
+ if(!visible.size){ $('conenote').style.display='block'; $('conenote').textContent='Choose one or more alert types first; the search returns those types.'; return; }
+ const rad=Math.min(CONE_MAX,fov*0.75), b=$('conebtn'); coneBusy=true; b.disabled=true; b.textContent='🔎 Searching Fink…';
+ try{ const r=await fetch(F+'/conesearch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ra:ra0,dec:de0,radius:Math.round(rad*3600),n:100,columns:FCOLS,'output-format':'json'})});
+   if(!r.ok) throw new Error('HTTP '+r.status); const rows=bigJSON(await r.text()); if(!Array.isArray(rows)) throw new Error('unexpected reply');
+   clearFink(false); const seen=new Set();
+   rows.forEach(x=>{ const a=finkObj(x); if(!a||seen.has(a.id)) return; seen.add(a.id); const own=BYID.get(a.id); if(own&&!own.fink){ a.cat=own.cat; a.name=own.name||a.name; a.xm=own.xm; } FINKRES.push(a); BYKEY.set(a.key,a); });
+   FCONE={ra:ra0,dec:de0,rad:rad,n:rows.length}; drawFink(); showFinkSummary();
+ }catch(e){ $('conenote').style.display='block'; $('conenote').textContent='The Fink search did not work ('+e.message+'). Try again, or a smaller area.'; }
+ finally{ coneBusy=false; b.disabled=false; b.textContent='🔎 All alerts here (Fink, all dates)'; } }
 function mjdUTC(m){ const d=new Date((m-40587)*86400000-37000); return d.toISOString().replace('T',' ').slice(0,16)+' UTC'; }
 function applyTime(){ const v=TIME.visits[TIME.i]; TIME.t=v?v[0]:0; TIME.night=v?v[1]:null; TIME.trail=$('trail').value;
  $('tlabel').textContent=v?('Exposure '+(TIME.i+1)+' of '+TIME.visits.length+' · '+mjdUTC(v[0])):'No exposure times for this selection';
@@ -197,7 +241,8 @@ function wireTime(){
  $('playbtn').onclick=()=>{ if(TIME.play){ stopPlay(); return; } if(TIME.i>=TIME.visits.length-1) TIME.i=0; $('playbtn').textContent='⏸';
    TIME.play=setInterval(()=>{ if(TIME.i>=TIME.visits.length-1){ stopPlay(); return; } TIME.i++; $('tslider').value=TIME.i; applyTime(); },700); };
  $('nightsel').onchange=()=>selectNights($('nightsel').value);
- $('densbox').onchange=()=>cullAll(); }
+ $('densbox').onchange=()=>cullAll();
+ $('conebtn').onclick=coneSearch; }
 function nightSummary(){ const L=NIGHTS.filter(n=>SELN.has(n.night)); let shown=0, fink=0; const miss=[];
  L.forEach(n=>{ shown+=n.n; fink+=(n.fink&&n.fink.fink_objects)||0; if(n.xm&&!n.xm.milliquas) miss.push(nightLabel(n.night)); });
  return shown.toLocaleString()+' alerts after quality cuts'+(fink?' (Fink recorded '+fink.toLocaleString()+' objects)':'')+
@@ -231,6 +276,7 @@ function cullAll(){
    let s=[]; for(const a of arr){ if(!timeOK(a)) continue; if(rad>=90||sepDeg(a.ra,a.dec,ra0,de0)<rad){ s.push(a); if(s.length>=MAXPER){ capped=true; break; } } }
    L.addSources(s.map(a=>A.source(a.ra,a.dec,{id:a.key}))); });
  drawDensity(rad);
+ { const cb=$('conebtn'); if(cb) cb.style.display=(rad<=CONE_MAX)?'inline-block':'none'; } if(FCONE){ drawFink(); showFinkSummary(); }
  const n=$('cullnote'); if(n){ const zo=rad>TILE_RAD&&visible.size>0; n.style.display=(capped||zo)?'block':'none';
    n.textContent=zo?'Zoomed out: showing the top-ranked alerts of each type. Zoom in to load every alert'+(($('densbox')&&$('densbox').checked)?' (faint circles mark where more are).':'.'):'Showing the strongest 4,000 alerts per type in view — zoom in to see more.'; }
 }
