@@ -1,14 +1,18 @@
-name: Daily alert pull
-# Captures the newest Rubin night from the Fink broker once a day.
-# It has to run daily: after a later night arrives in Fink, an older night can no longer be captured this way.
-# The logic lives in pipeline/daily.py, so this file should not need editing again.
+name: Daily alert pull and site
+# Captures and builds the newest Rubin night from Fink, then publishes the site.
+# Also re-publishes the site whenever code on main changes.
+# All logic lives in pipeline/nightly.sh and pipeline/daily.py on main, so this file should not need editing again.
 on:
   schedule:
     - cron: "30 14 * * *"   # 14:30 UTC, about five hours after the night ends in Chile
     - cron: "30 19 * * *"   # second attempt, in case Fink was slow or the first run failed
+  push:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: write
+  pages: write
+  id-token: write
 concurrency:
   group: daily-alert-pull
   cancel-in-progress: false
@@ -16,28 +20,25 @@ jobs:
   pull:
     runs-on: ubuntu-latest
     timeout-minutes: 330
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - name: Get the site and the raw-night store
-        run: |
-          git clone --depth 1 "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" site
-          git clone --depth 1 --branch raw "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" rawstore
+      - name: Get the code
+        run: git clone --depth 1 "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" main
       - name: Install Python packages
         run: |
           python3 -m venv venv
           venv/bin/pip install --quiet requests numpy pandas pyarrow
-      - name: Capture and build the newest night
-        run: venv/bin/python site/pipeline/daily.py --raw rawstore --site site
-      - name: Save the raw night
-        run: |
-          cd rawstore
-          git config user.name "changing-sky-bot"
-          git config user.email "changing-sky-bot@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then echo "nothing new"; else git commit -q -m "Raw night $(date -u +%Y-%m-%d)"; git push -q; fi
-      - name: Publish site data (if the job produced any)
-        run: |
-          cd site
-          git config user.name "changing-sky-bot"
-          git config user.email "changing-sky-bot@users.noreply.github.com"
-          git add -A data
-          if git diff --cached --quiet; then echo "no site changes"; else git commit -q -m "Nightly data $(date -u +%Y-%m-%d)"; git pull -q --rebase; git push -q; fi
+      - name: Capture, build and assemble the site
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PY: venv/bin/python
+        run: bash main/pipeline/nightly.sh "${{ github.event_name }}"
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - name: Publish the site
+        id: deploy
+        uses: actions/deploy-pages@v5
