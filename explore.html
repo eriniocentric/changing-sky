@@ -102,7 +102,7 @@ header{position:relative}
  <div id="brand"><img id="logo" src="logo_full_220.png" alt="Changing Sky" height="110">
   <button id="cdswarn" title="Some sky surveys are unavailable right now. Click for details.">⚠</button>
   <button id="infobtn" title="About this view">i</button></div>
- <div id="cdsnote"><span class="x" id="cdsx" title="Close">✕</span>The CDS Strasbourg sky servers are not responding right now, so the background sky comes from a mirror copy (NASA/IPAC IRSA or ESA ESASky) and only DSS2, 2MASS, AllWISE and SDSS are available. Alerts, images from Rubin, deep Legacy Survey cutouts and voting still work.</div>
+ <div id="cdsnote"><span class="x" id="cdsx" title="Close">✕</span>The CDS Strasbourg sky servers are not responding right now, so the background sky comes from a mirror copy (NASA/IPAC IRSA or ESA ESASky) and only DSS2, 2MASS, AllWISE, SDSS and Pan-STARRS (from MAST) are available. Rubin's own deep sky maps, alerts, images from Rubin, deep Legacy Survey cutouts and voting still work.</div>
  <div id="acct"></div></header>
 <div id="infomodal" role="dialog" aria-modal="true" aria-labelledby="infotitle"><div id="infobox">
  <button id="infoclose" class="cbtn" title="Close (Esc)">✕</button>
@@ -262,7 +262,7 @@ function selectNights(v){ stopPlay(); SELN=new Set(v==='all'?NIGHTS.map(n=>n.nig
  loadTop().then(()=>{ BGDONE=true; visible.forEach(k=>{ if(!layers[k]&&MANIFEST[k]) makeLayer(k); }); cullAll(); renderList();
    if(typeof renderTop==='function'){ renderTop(); renderFU(); drawPicks(); } }); }
 const CATS=[["sn", "Supernovae & classified transients", "#ff5c5c", "A transient with a spectroscopic or catalogue classification on the Transient Name Server (TNS) \u2014 most are supernovae, exploding stars in other galaxies."], ["at", "Known transients (unclassified)", "#ffd43b", "Already reported to the Transient Name Server but not yet classified. These are prime targets for follow-up spectroscopy."], ["agn", "AGN, quasars & blazars", "#ffa94d", "An active galactic nucleus: gas falling onto a supermassive black hole flickers on timescales of days to years. Blazars point a jet at us and can flare dramatically."], ["var", "Variable stars", "#69db7c", "A star in our own Galaxy whose brightness changes \u2014 pulsating stars (RR Lyrae, Cepheids, delta Scuti), eclipsing binaries, flaring dwarfs, cataclysmic variables and young stars."], ["gal", "Changes in known galaxies", "#4dabf7", "The change sits on a catalogued galaxy but has no further identification: could be a new supernova, a nuclear flare, or a subtraction residual."], ["xgal", "Extragalactic candidates", "#74c0fc", "Selected by Fink as probably outside our Galaxy (new, or supernova-like), with no catalogue identification yet."], ["host", "Hostless transients", "#c77dff", "No visible host galaxy \u2014 possible superluminous supernova, a transient in a very faint galaxy, or something stranger."], ["other", "Other catalogued sources", "#e599f7", "Matched in SIMBAD to a source type that is neither a star nor a galaxy (radio, X-ray, infrared source and similar)."], ["unk", "Unidentified", "#ffffff", "No match within 1 arcsecond in SIMBAD, Gaia DR3, Milliquas, VSX or TNS, and the detection passed a strict reliability cut (\u22650.8). The unknown: faint transients, distant variables, or genuinely new phenomena."], ["glint", "Rubin-flagged glint trails", "#ff922b", "Detections that Rubin's own pipeline flagged as part of a glint trail \u2014 a line of short flashes, usually from a tumbling satellite or piece of debris catching the Sun. On this night they show up mostly in crowded star fields near the Milky Way and rarely line up with known satellites, so many may be chance alignments of real sources rather than satellites. Help us tell them apart!"], ["sso", "Asteroids & Solar System", "#a9e34b", "Asteroids caught by Rubin on this night, identified by matching each detection to the predicted position of a known Solar System body. They are grouped by their distance from the Sun at the time: most are main-belt asteroids between Mars and Jupiter, a few are Jupiter Trojans, Centaurs or objects beyond Neptune, and a handful are near-Earth asteroids. Open one to see its path across the sky over the past weeks and how its brightness changed. (The grouping uses the current distance from the Sun, not the full orbit, so it is a guide rather than a formal classification.)"], ["star", "Changes on catalogued stars", "#868e96", "Sits on a star in Gaia DR3 or SIMBAD that is not (yet) known to vary. Some are new variable stars or flares; many are imperfect subtractions around stars. There are over 100,000 of these, so expect a crowded sky when they are switched on.", false]];            // [key,label,color,explanation]
-const SURVEYS=[["Optical", [["CDS/P/DSS2/color", "DSS2 colour", "100% of sky", "https://alasky.cds.unistra.fr/DSS/DSSColor/preview.jpg"], ["CDS/P/DESI-Legacy-Surveys/DR10/color", "DESI Legacy Surveys DR10", "67% of sky", "https://alasky.cds.unistra.fr/DESI-legacy-surveys/DR10/CDS_P_DESI-Legacy-Surveys_DR10_color/preview.jpg"], ["CDS/P/DES-DR2/ColorIRG", "Dark Energy Survey DR2", "13% of sky", "https://alasky.cds.unistra.fr/DES/DR2/CDS_P_DES-DR2_ColorIRG/preview.jpg"], ["CDS/P/DECaPS/DR2/color", "DECaPS (southern Galactic plane)", "7% of sky", "https://alasky.cds.unistra.fr/DECaPS/DR2/CDS_P_DECaPS_DR2_color/preview.jpg"], ["CDS/P/PanSTARRS/DR1/color-z-zg-g", "Pan-STARRS DR1", "78% of sky", "https://alasky.cds.unistra.fr/Pan-STARRS/DR1/color-z-zg-g/preview.jpg"], ["CDS/P/SDSS9/color", "SDSS DR9", "36% of sky", "https://alasky.cds.unistra.fr/SDSS/DR9/color/preview.jpg"], ["CDS/P/Mellinger/color", "Mellinger Milky Way panorama", "100% of sky", "https://alasky.cds.unistra.fr/MellingerRGB/preview.jpg"]]], ["Rubin", [["CDS/P/Rubin/FirstLook", "Rubin First Look", "small fields", "https://alasky.cds.unistra.fr/Rubin/CDS_P_Rubin_FirstLook/preview.jpg"]]], ["Infrared", [["CDS/P/2MASS/color", "2MASS near-infrared", "100% of sky", "https://alasky.cds.unistra.fr/2MASS/Color/preview.jpg"], ["VOXASTRO/P/VHS/JKs/color", "VISTA Hemisphere Survey", "48% of sky", null], ["CDS/P/unWISE/color-W2-W1W2-W1", "unWISE", "100% of sky", "https://alasky.cds.unistra.fr/unWISE/color-W2-W1W2-W1/preview.jpg"], ["CDS/P/allWISE/color", "AllWISE mid-infrared", "100% of sky", "https://alasky.cds.unistra.fr/AllWISE/RGB-W4-W2-W1/preview.jpg"], ["CDS/P/IRIS/color", "IRAS far-infrared", "100% of sky", "https://alasky.cds.unistra.fr/IRISColor/preview.jpg"]]], ["Ultraviolet", [["CDS/P/GALEXGR6_7/color", "GALEX ultraviolet", "79% of sky", "https://alasky.cds.unistra.fr/GALEX/GALEXGR6_7_color/preview.jpg"]]], ["X-ray", [["CDS/P/RASS", "ROSAT all-sky X-ray", "100% of sky", "https://alasky.cds.unistra.fr/RASS/preview.jpg"], ["xcatdb/P/XMM/PN/color", "XMM-Newton (pointed fields)", "9% of sky", null]]], ["Radio", [["CSIRO/P/RACS/low/I", "ASKAP RACS 888 MHz", "84% of sky", null], ["CDS/P/SUMSS", "SUMSS 843 MHz", "25% of sky", "https://alasky.cds.unistra.fr/SUMSS/preview.jpg"], ["CDS/P/NVSS", "NVSS 1.4 GHz", "82% of sky", "https://alasky.cds.unistra.fr/NVSS/intensity/preview.jpg"], ["CDS/P/HI4PI/NHI", "HI4PI hydrogen gas", "100% of sky", "https://alasky.cds.unistra.fr/HI4PI/P_HI4PI_NHI/preview.jpg"]]], ["Gamma-ray", [["CDS/P/Fermi/color", "Fermi gamma-ray", "100% of sky", "https://alasky.cds.unistra.fr/Fermi/Color/preview.jpg"]]]];      // [group,[[id,title,coverage,preview],...]]
+const SURVEYS=[["Optical", [["CDS/P/DSS2/color", "DSS2 colour", "100% of sky", "https://alasky.cds.unistra.fr/DSS/DSSColor/preview.jpg"], ["CDS/P/DESI-Legacy-Surveys/DR11/color", "DESI Legacy Surveys DR11", "76% of sky", "https://alasky.cds.unistra.fr/DESI-legacy-surveys/DR11/CDS_P_DESI-Legacy-Surveys_DR11_color/preview.jpg"], ["CDS/P/DES-DR2/ColorIRG", "Dark Energy Survey DR2", "13% of sky", "https://alasky.cds.unistra.fr/DES/DR2/CDS_P_DES-DR2_ColorIRG/preview.jpg"], ["CDS/P/DECaPS/DR2/color", "DECaPS (southern Galactic plane)", "7% of sky", "https://alasky.cds.unistra.fr/DECaPS/DR2/CDS_P_DECaPS_DR2_color/preview.jpg"], ["CDS/P/PanSTARRS/DR1/color-i-r-g", "Pan-STARRS DR1", "76% of sky", "https://alasky.cds.unistra.fr/Pan-STARRS/DR1/color-i-r-g/preview.jpg"], ["CDS/P/SDSS9/color", "SDSS DR9", "36% of sky", "https://alasky.cds.unistra.fr/SDSS/DR9/color/preview.jpg"], ["CDS/P/Mellinger/color", "Mellinger Milky Way panorama", "100% of sky", "https://alasky.cds.unistra.fr/MellingerRGB/preview.jpg"]]], ["Rubin", [["RUBIN/latest", "Rubin latest sky map (COSMOS + Ocean of Stars)", "35 deg\u00b2 \u00b7 Rubin server", "thumbs/rubin_ocean.jpg"], ["RUBIN/virgo", "Rubin First Look: Virgo", "24 deg\u00b2 \u00b7 Rubin server", "thumbs/rubin_virgo.jpg"], ["CDS/P/Rubin/FirstLook", "Rubin First Look (Virgo + Trifid/Lagoon)", "29 deg\u00b2 \u00b7 CDS", "https://alasky.cds.unistra.fr/Rubin/CDS_P_Rubin_FirstLook/preview.jpg"]]], ["Infrared", [["CDS/P/2MASS/color", "2MASS near-infrared", "100% of sky", "https://alasky.cds.unistra.fr/2MASS/Color/preview.jpg"], ["VOXASTRO/P/VHS/JKs/color", "VISTA Hemisphere Survey", "48% of sky", null], ["CDS/P/unWISE/color-W2-W1W2-W1", "unWISE", "100% of sky", "https://alasky.cds.unistra.fr/unWISE/color-W2-W1W2-W1/preview.jpg"], ["CDS/P/allWISE/color", "AllWISE mid-infrared", "100% of sky", "https://alasky.cds.unistra.fr/AllWISE/RGB-W4-W2-W1/preview.jpg"], ["CDS/P/IRIS/color", "IRAS far-infrared", "100% of sky", "https://alasky.cds.unistra.fr/IRISColor/preview.jpg"]]], ["Ultraviolet", [["CDS/P/GALEXGR6_7/color", "GALEX ultraviolet", "79% of sky", "https://alasky.cds.unistra.fr/GALEX/GALEXGR6_7_color/preview.jpg"]]], ["X-ray", [["CDS/P/RASS", "ROSAT all-sky X-ray", "100% of sky", "https://alasky.cds.unistra.fr/RASS/preview.jpg"], ["xcatdb/P/XMM/PN/color", "XMM-Newton (pointed fields)", "9% of sky", null]]], ["Radio", [["CSIRO/P/RACS/low/I", "ASKAP RACS 888 MHz", "84% of sky", null], ["CDS/P/SUMSS", "SUMSS 843 MHz", "25% of sky", "https://alasky.cds.unistra.fr/SUMSS/preview.jpg"], ["CDS/P/NVSS", "NVSS 1.4 GHz", "82% of sky", "https://alasky.cds.unistra.fr/NVSS/intensity/preview.jpg"], ["CDS/P/HI4PI/NHI", "HI4PI hydrogen gas", "100% of sky", "https://alasky.cds.unistra.fr/HI4PI/P_HI4PI_NHI/preview.jpg"]]], ["Gamma-ray", [["CDS/P/Fermi/color", "Fermi gamma-ray", "100% of sky", "https://alasky.cds.unistra.fr/Fermi/Color/preview.jpg"]]]];      // [group,[[id,title,coverage,preview],...]]
 const BANDC={u:"#5b3a96",g:"#2a7fb8",r:"#3a9e5a",i:"#d6a21e",z:"#d4602a",y:"#8c2d2d"};
 const catInfo=Object.fromEntries(CATS.map(c=>[c[0],c]));
 let aladin,layers={},visible=new Set(),sel=null,shown=300,ovLayer=null,touched=false;
@@ -306,17 +306,27 @@ function buildSurveys(){
    NASA/IPAC IRSA was about 2x faster per tile than ESA ESASky in tests (0.46 s vs 0.90 s median),
    so it goes first; at start-up the page races both and uses whichever answers first. */
 const IRSA='https://irsa.ipac.caltech.edu/data/hips/CDS/';
+/* Pan-STARRS DR1 i-r-g: MAST's copy is listed by CDS as an official mirror (same 2019-11-21 release, CORS *).
+   No copy of any Legacy Surveys or DES HiPS exists outside CDS, so Pan-STARRS is the deepest optical sky left during an outage (dec > -30). */
+const MAST_PS1='https://stpubdata.s3.us-east-1.amazonaws.com/mast/skybackgrounds/PanSTARRS';
+/* Surveys served only from their own (non-CDS) host: always loaded by URL, unaffected by CDS outages.
+   Rubin publishes these public HiPS itself (they back the Rubin Skyviewer app). */
+const FIXED={
+ 'RUBIN/latest':'https://images.rubinobservatory.org/hips/oceancosmosm18/color_gri',
+ 'RUBIN/virgo':'https://images.rubinobservatory.org/hips/SVImages_v2/color_ugri'};
 const MIRRORS={
  irsa:{name:'NASA/IPAC IRSA',
   'CDS/P/DSS2/color':[IRSA+'DSS2/color',IRSA+'DSS2/color/preview.jpg'],
   'CDS/P/2MASS/color':[IRSA+'2MASS/Color',IRSA+'2MASS/Color/preview.jpg'],
   'CDS/P/allWISE/color':[IRSA+'AllWISE/RGB-W4-W2-W1',IRSA+'AllWISE/RGB-W4-W2-W1/preview.jpg'],
-  'CDS/P/SDSS9/color':[IRSA+'SDSS/DR9/color',IRSA+'SDSS/DR9/color/preview.jpg']},
+  'CDS/P/SDSS9/color':[IRSA+'SDSS/DR9/color',IRSA+'SDSS/DR9/color/preview.jpg'],
+  'CDS/P/PanSTARRS/DR1/color-i-r-g':[MAST_PS1,MAST_PS1+'/preview.jpg']},
  esa:{name:'ESA ESASky',
   'CDS/P/DSS2/color':['https://skies.esac.esa.int/DSSColor','https://skies.esac.esa.int/DSSColor/preview.jpg'],
   'CDS/P/2MASS/color':['https://skies.esac.esa.int/2MASSColor',null],
   'CDS/P/allWISE/color':['https://skies.esac.esa.int/AllWISEColor','https://skies.esac.esa.int/AllWISEColor/preview.jpg'],
-  'CDS/P/SDSS9/color':['https://skies.esac.esa.int/SDSS9Color','https://skies.esac.esa.int/SDSS9Color/preview.jpg']}};
+  'CDS/P/SDSS9/color':['https://skies.esac.esa.int/SDSS9Color','https://skies.esac.esa.int/SDSS9Color/preview.jpg'],
+  'CDS/P/PanSTARRS/DR1/color-i-r-g':[MAST_PS1,MAST_PS1+'/preview.jpg']}};
 let MIRROR={}; Object.keys(MIRRORS.irsa).forEach(k=>{ if(k!=='name') MIRROR[k]=MIRRORS.irsa[k]; }); let MIRROR_NAME=MIRRORS.irsa.name;
 function useMirror(key){ const m=MIRRORS[key]; MIRROR={}; Object.keys(m).forEach(k=>{ if(k!=='name') MIRROR[k]=m[k]; }); MIRROR_NAME=m.name; }
 function pickMirror(){ /* first mirror to return the DSS properties file wins; IRSA if neither answers within 1.5 s */
@@ -327,20 +337,21 @@ const mirrorP=pickMirror();
 let CDS_OK=null; /* null while the background check runs, then true/false */
 function cdsCheck(){ return new Promise(res=>{ const c=new AbortController(); const t=setTimeout(()=>{ try{c.abort()}catch(e){} res(false); },3500);
  fetch('https://alasky.cds.unistra.fr/DSS/DSSColor/properties',{signal:c.signal,cache:'no-store'}) /* a real HiPS file: the MocServer can answer while image tiles 404 */.then(r=>{ clearTimeout(t); res(r.ok); }).catch(()=>{ clearTimeout(t); res(false); }); }); }
-function hipsOf(id){ if(CDS_OK===true) return id; const m=MIRROR[id]; if(!m) return CDS_OK===null?id:null; try{ return A.imageHiPS(m[0],{name:id}); }catch(e){ return m[0]; } }
+function hipsOf(id){ if(FIXED[id]){ try{ return A.imageHiPS(FIXED[id],{name:id}); }catch(e){ return FIXED[id]; } }
+ if(CDS_OK===true) return id; const m=MIRROR[id]; if(!m) return CDS_OK===null?id:null; try{ return A.imageHiPS(m[0],{name:id}); }catch(e){ return m[0]; } }
 function enterMirrorMode(){
  const w=$('cdswarn'); if(w) w.style.display='block';
- document.querySelectorAll('.tile').forEach(x=>{ const m=MIRROR[x.dataset.id];
+ document.querySelectorAll('.tile').forEach(x=>{ if(FIXED[x.dataset.id]) return; const m=MIRROR[x.dataset.id];
    if(!m){ x.classList.add('na'); x.title='Temporarily unavailable: CDS Strasbourg is offline'; const s=x.querySelector('.tt small'); if(s&&!s.querySelector('.offl')) s.insertAdjacentHTML('beforeend','<span class="offl"> · CDS offline</span>'); }
    else { const im=x.querySelector('img.thumb'); if(im&&m[1]) im.src=m[1]; x.title='Served from the '+MIRROR_NAME+' copy while CDS is offline'; } });
 }
 function setBase(id){
- if(CDS_OK===false&&!MIRROR[id]) return;
+ if(CDS_OK===false&&!MIRROR[id]&&!FIXED[id]) return;
  try{aladin.setBaseImageLayer(hipsOf(id));}catch(e){try{aladin.setImageSurvey(id);}catch(e2){console.warn(e2)}}
  document.querySelectorAll('.tile').forEach(x=>x.classList.toggle('on',x.dataset.id===id));
 }
 function setOverlay(id,title,btn){
- if(CDS_OK===false&&!MIRROR[id]) return;
+ if(CDS_OK===false&&!MIRROR[id]&&!FIXED[id]) return;
  try{
   ovLayer=aladin.setOverlayImageLayer(hipsOf(id),'overlay');
   const op=parseFloat($('ovop').value); if(ovLayer&&ovLayer.setOpacity) ovLayer.setOpacity(op);
@@ -384,9 +395,9 @@ $('q').oninput=()=>{shown=300;renderList();}; $('sort').onchange=renderList;
 
 /* ---------- alert card (live from Fink) ---------- */
 /* Deep context cutout from the Legacy Survey server at NERSC (independent of CDS, CORS *).
-   ls-dr10 first; outside its footprint the server returns a flat grey JPEG, so test the pixel spread
+   ls-dr11 first; outside its footprint the server returns a flat grey JPEG, so test the pixel spread
    and fall back to DECaPS2 (Galactic plane and bulge). 152 px at 0.42"/px = 64" across. */
-const DEEP=[['ls-dr10','Legacy DR10'],['decaps2','DECaPS2']];
+const DEEP=[['ls-dr11','Legacy DR11'],['decaps2','DECaPS2']];
 function deepURL(a,layer){ return 'https://www.legacysurvey.org/viewer/cutout.jpg?ra='+a.ra+'&dec='+a.dec+'&layer='+layer+'&pixscale=0.42&size=152'; }
 function imgFlat(im){ try{ const w=im.naturalWidth||152, h=im.naturalHeight||152, cv=document.createElement('canvas'); cv.width=w; cv.height=h; const x=cv.getContext('2d'); x.drawImage(im,0,0);
   const d=x.getImageData(0,0,w,h).data; let lo=255, hi=0; for(let i=0;i<d.length;i+=4){ const v=d[i]+d[i+1]+d[i+2]; if(v<lo) lo=v; if(v>hi) hi=v; }
@@ -422,7 +433,7 @@ function openAlert(a,fly){
  const c=catInfo[a.cat];
  const links=[`<a target="_blank" href="https://lsst.fink-portal.org/${a.id}">Fink</a>`,`<a target="_blank" href="https://lasair.lsst.ac.uk/objects/${a.id}/">Lasair</a>`,
   `<a target="_blank" href="https://simbad.cds.unistra.fr/simbad/sim-coo?Coord=${a.ra}+${a.dec}&Radius=5&Radius.unit=arcsec">SIMBAD</a>`,
-  `<a target="_blank" href="https://www.legacysurvey.org/viewer?ra=${a.ra}&dec=${a.dec}&layer=ls-dr10&zoom=15&mark=${a.ra},${a.dec}">Legacy Survey viewer</a>`];
+  `<a target="_blank" href="https://www.legacysurvey.org/viewer?ra=${a.ra}&dec=${a.dec}&layer=ls-dr11&zoom=15&mark=${a.ra},${a.dec}">Legacy Survey viewer</a>`];
  if(a.name&&/^(SN|AT|TDE)\s/.test(a.name)) links.unshift(`<a target="_blank" href="https://www.wis-tns.org/object/${a.name.split(' ').slice(1).join('')}">TNS</a>`);
  $('cardbody').innerHTML=`<div class="ctitle"><span class="tag" style="background:${c[2]}">${c[1]}</span><b>${a.name||('Rubin object '+a.id)}</b> <span style="color:#9aa4b8">${a.mag} mag ${a.band} · SNR ${a.snr}</span></div>
   <div class="cbody">
