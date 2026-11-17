@@ -132,7 +132,7 @@ header{position:relative}
   <details><summary>About these surveys</summary>Click a tile to change the background sky. Use ◐ to lay a second survey on top and fade between them — for example, compare an optical galaxy with its X-ray or radio emission. Sky coverage is shown under each name; outside it the map is blank.</details>
  </div>
  <div id="center"><div id="aladin"></div>
-  <div id="topbar"><button id="whole">Whole sky</button><button id="zoomsel">Zoom to selected</button><button id="conebtn" style="display:none" title="Ask Fink for every alert it has ever issued in this view, of the types you have selected. Nothing is stored here.">🔎 All alerts here (Fink, all dates)</button></div><div id="conenote"></div>
+  <div id="topbar"><button id="whole">Whole sky</button><button id="zoomsel">Zoom to selected</button><button id="odnext" style="display:none" title="Fly to the next area where Rubin observed on this night">▶ Next busy area</button><button id="conebtn" style="display:none" title="Ask Fink for every alert it has ever issued in this view, of the types you have selected. Nothing is stored here.">🔎 All alerts here (Fink, all dates)</button></div><div id="conenote"></div>
   <div id="cullnote">Showing the strongest 4,000 alerts per type in view — zoom in to see more. The list on the right includes all of them.</div>
   <div id="card"><button id="minbtn" class="cbtn" title="Minimise">–</button><button id="close" class="cbtn" title="Close (Esc)">✕</button><div id="cardbody"></div></div>
  </div>
@@ -313,13 +313,31 @@ async function openPending(id,ra,de,tns){ let a=FINKRES.find(x=>x.id===id)||BYID
  if(a) openAlert(a,false); else snote('Found the position, but Fink returned no alert for object '+id+' there.'); }
 function odWin(night){ const s=String(night), d=Date.UTC(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8)), a=new Date(d-6*3600e3), b=new Date(d+14*3600e3), f=x=>x.toISOString().slice(0,19).replace('T',' ');
  return {night:s,S:f(a),E:f(b),m0:a.getTime()/864e5+40587,m1:b.getTime()/864e5+40587}; }
+let ODSEED=null, ODLAYER=null, ODI=0;
+async function odSeeds(od){ const pts=[];
+ for(const tg of ['most_likely_sn','extragalactic_new_candidate','in_tns']){ try{ const r=await fpost('tags',{tag:tg,n:5000,startdate:od.S,stopdate:od.E,columns:'r:ra,r:dec'}); r.forEach(x=>{ if(x['r:ra']!=null) pts.push([+x['r:ra'],+x['r:dec']]); }); }catch(e){ console.warn('tag',tg,e); } if(ODN!==od) return null; }
+ const cells=new Map(), d2r=Math.PI/180;
+ pts.forEach(([ra,de])=>{ const k=Math.round(de/1.5)+'_'+Math.round(ra*Math.cos(de*d2r)/1.5); let c=cells.get(k); if(!c){ c={n:0,x:0,y:0,z:0}; cells.set(k,c); }
+   c.n++; c.x+=Math.cos(de*d2r)*Math.cos(ra*d2r); c.y+=Math.cos(de*d2r)*Math.sin(ra*d2r); c.z+=Math.sin(de*d2r); });
+ const L=[...cells.values()].map(c=>{ const r=Math.hypot(c.x,c.y,c.z); return {ra:(Math.atan2(c.y,c.x)/d2r+360)%360, dec:Math.asin(c.z/r)/d2r, n:c.n}; }).sort((a,b)=>b.n-a.n);
+ return {n:pts.length,cells:L}; }
+function odDraw(){ if(!aladin||!window.A) return; if(!ODLAYER){ ODLAYER=A.catalog({name:'Where Rubin looked that night',color:'#7f9bd6',sourceSize:9,shape:'circle',selectionColor:'#ffffff'}); aladin.addCatalog(ODLAYER); }
+ ODLAYER.removeAll(); if(ODSEED) ODLAYER.addSources(ODSEED.cells.map((c,k)=>A.source(c.ra,c.dec,{odc:k}))); }
+function odShow(rad){ if(ODLAYER){ try{ if(ODN&&ODSEED&&rad>CONE_MAX) ODLAYER.show(); else ODLAYER.hide(); }catch(e){} } }
+function odGo(k){ if(!ODSEED||!ODSEED.cells.length||!aladin) return; const N=ODSEED.cells.length; ODI=((k%N)+N)%N; const c=ODSEED.cells[ODI];
+ FCONE=null; aladin.gotoRaDec(c.ra,c.dec); aladin.setFoV(1.0); const b=$('odnext'); b.style.display='inline-block'; b.textContent='▶ Next busy area ('+(ODI+1)+' of '+N+')'; }
+function odStart(od){ ODSEED=null; odDraw(); const b=$('odnext'); if(b) b.style.display='none'; if(!od) return;
+ snote('Finding where Rubin looked on '+nightLabel(od.night)+'…');
+ odSeeds(od).then(s=>{ if(ODN!==od||!s) return; ODSEED=s; odDraw();
+   if(!s.cells.length){ snote('Fink lists no tagged alerts for '+nightLabel(od.night)+', so its footprint is unknown here. Zoom in anywhere to try.'); return; }
+   snote(nightLabel(od.night)+': Rubin’s alerts fall in about '+s.cells.length+' sky areas (blue dots). Flying to the busiest; use ▶ Next busy area or click a blue dot.'); odGo(0); }); }
 function odCounts(){ const c={}; FINKRES.forEach(a=>c[a.cat]=(c[a.cat]||0)+1); document.querySelectorAll('#cats .cat').forEach(d=>{ const e=d.querySelector('.cnt'); if(e) e.textContent=(c[d.dataset.k]||0).toLocaleString(); }); }
 function selectNights(v){ const stored=NIGHTS.some(n=>n.night===v);
- if(stored){ ODN=null; clearFink(true); return selectStored(v); }
+ if(stored){ ODN=null; clearFink(true); odStart(null); return selectStored(v); }
  stopPlay(); ODN=odWin(v); clearFink(true); SELN=new Set([v]); MANIFEST={}; TIME.visits=[];
  $('cats').innerHTML=''; buildCats(); setupSlider(); const f=ALLN.find(n=>n.night===v);
  $('nightinfo').textContent=(f&&f.fink?f.fink.toLocaleString()+' alerts that night in Fink. ':'')+'Not stored here: zoom in (view under about 1.5° across) to load that night\'s alerts in view from Fink.';
- snote('Showing '+nightLabel(v)+': zoom in to load its alerts.'); cullAll(); renderList(); }
+ cullAll(); renderList(); odStart(ODN); }
 async function loadFinkNights(){ try{ const st=await fpost('statistics',{date:''}); const m=new Map(ALLN.map(n=>[n.night,n]));
    st.forEach(x=>{ const k=String(x['f:night']), a=+x['f:alerts']||0; if(!k||!a) return; const o=m.get(k); if(o) o.fink=a; else m.set(k,{night:k,fink:a,stored:false}); });
    ALLN=[...m.values()].sort((x,y)=>x.night<y.night?-1:1); const ms=$('monthsel').value, ns=$('nightsel').value; buildNightPicker(); $('monthsel').value=ms; fillNights(ms,ns);
@@ -339,6 +357,7 @@ function wireTime(){
  $('nightsel').onchange=()=>selectNights($('nightsel').value);
  $('densbox').onchange=()=>cullAll();
  $('conebtn').onclick=()=>{ FCONE=null; coneSearch(); };
+ $('odnext').onclick=()=>odGo(ODI+1);
  $('autocone').onchange=()=>{ if($('autocone').checked){ FCONE=null; cullAll(); } else clearFink(true); };
  $('q').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); const v=$('q').value; if(/^\d{15,20}$/.test(v.trim())||parseCoords(v)||filtered().length===0){ $('q').value=''; renderList(); findAnywhere(v); } } }); }
 function nightSummary(){ const L=NIGHTS.filter(n=>SELN.has(n.night)); let shown=0, fink=0; const miss=[];
@@ -381,7 +400,7 @@ function cullAll(){
    let s=[]; for(const a of arr){ if(!timeOK(a)) continue; if(rad>=90||sepDeg(a.ra,a.dec,ra0,de0)<rad){ s.push(a); if(s.length>=MAXPER){ capped=true; break; } } }
    L.addSources(s.map(a=>A.source(a.ra,a.dec,{id:a.key}))); });
  drawDensity(rad);
- { const cb=$('conebtn'); if(cb) cb.style.display=(rad<=CONE_MAX)?'inline-block':'none'; } autoCone(ra0,de0,rad); if(FCONE){ drawFink(); showFinkSummary(); }
+ { const cb=$('conebtn'); if(cb) cb.style.display=(rad<=CONE_MAX)?'inline-block':'none'; } autoCone(ra0,de0,rad); odShow(rad); if(FCONE){ drawFink(); showFinkSummary(); }
  const n=$('cullnote'); if(n){ const zo=rad>TILE_RAD&&visible.size>0; n.style.display=(capped||zo)?'block':'none';
    n.textContent=zo?'Zoomed out: showing the top-ranked alerts of each type. Zoom in to load every alert'+(($('densbox')&&$('densbox').checked)?' (faint circles mark where more are).':'.'):'Showing the strongest 4,000 alerts per type in view — zoom in to see more.'; }
 }
@@ -914,7 +933,7 @@ Promise.all([aladinLoaded().then(()=>A.init),mirrorP]).then(()=>{
  fetch('data/nights.json',{cache:'no-cache'}).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }).then(idx=>{ NIGHTS=idx.nights||[]; TB=idx.tile_bands||64; tileInit();
    if(!NIGHTS.length) throw new Error('no nights'); buildNightPicker(); selectNights(NIGHTS[NIGHTS.length-1].night); loadFinkNights(); })
   .catch(e=>{ $('nshow').textContent='Could not load the list of nights ('+e.message+').'; });
- aladin.on('objectClicked',o=>{ if(o&&o.data&&o.data.id){const a=BYKEY.get(o.data.id)||BYID.get(o.data.id); if(a) openAlert(a,false);} });
+ aladin.on('objectClicked',o=>{ if(o&&o.data&&o.data.odc!==undefined){ odGo(o.data.odc); return; } if(o&&o.data&&o.data.id){const a=BYKEY.get(o.data.id)||BYID.get(o.data.id); if(a) openAlert(a,false);} });
  $('whole').onclick=()=>{closeCard(); aladin.gotoRaDec(301.289,-17.363); aladin.setFoV(150);};
  drawPicks(); setInterval(refreshScores,60000);
  $('satcnt').textContent=SATS.length; 

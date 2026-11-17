@@ -301,5 +301,33 @@ async function loadFinkNights(){ try{ const st=await fpost('statistics',{date:''
 function mjdUTC(m){""")
 
 rep("selectNights(NIGHTS[NIGHTS.length-1].night); })", "selectNights(NIGHTS[NIGHTS.length-1].night); loadFinkNights(); })")
+
+# ---------- 9. picking a non-stored night: show where Rubin looked and fly to the busiest area (added 2026-11-17) ----------
+rep("function odCounts(){", r"""let ODSEED=null, ODLAYER=null, ODI=0;
+async function odSeeds(od){ const pts=[];
+ for(const tg of ['most_likely_sn','extragalactic_new_candidate','in_tns']){ try{ const r=await fpost('tags',{tag:tg,n:5000,startdate:od.S,stopdate:od.E,columns:'r:ra,r:dec'}); r.forEach(x=>{ if(x['r:ra']!=null) pts.push([+x['r:ra'],+x['r:dec']]); }); }catch(e){ console.warn('tag',tg,e); } if(ODN!==od) return null; }
+ const cells=new Map(), d2r=Math.PI/180;
+ pts.forEach(([ra,de])=>{ const k=Math.round(de/1.5)+'_'+Math.round(ra*Math.cos(de*d2r)/1.5); let c=cells.get(k); if(!c){ c={n:0,x:0,y:0,z:0}; cells.set(k,c); }
+   c.n++; c.x+=Math.cos(de*d2r)*Math.cos(ra*d2r); c.y+=Math.cos(de*d2r)*Math.sin(ra*d2r); c.z+=Math.sin(de*d2r); });
+ const L=[...cells.values()].map(c=>{ const r=Math.hypot(c.x,c.y,c.z); return {ra:(Math.atan2(c.y,c.x)/d2r+360)%360, dec:Math.asin(c.z/r)/d2r, n:c.n}; }).sort((a,b)=>b.n-a.n);
+ return {n:pts.length,cells:L}; }
+function odDraw(){ if(!aladin||!window.A) return; if(!ODLAYER){ ODLAYER=A.catalog({name:'Where Rubin looked that night',color:'#7f9bd6',sourceSize:9,shape:'circle',selectionColor:'#ffffff'}); aladin.addCatalog(ODLAYER); }
+ ODLAYER.removeAll(); if(ODSEED) ODLAYER.addSources(ODSEED.cells.map((c,k)=>A.source(c.ra,c.dec,{odc:k}))); }
+function odShow(rad){ if(ODLAYER){ try{ if(ODN&&ODSEED&&rad>CONE_MAX) ODLAYER.show(); else ODLAYER.hide(); }catch(e){} } }
+function odGo(k){ if(!ODSEED||!ODSEED.cells.length||!aladin) return; const N=ODSEED.cells.length; ODI=((k%N)+N)%N; const c=ODSEED.cells[ODI];
+ FCONE=null; aladin.gotoRaDec(c.ra,c.dec); aladin.setFoV(1.0); const b=$('odnext'); b.style.display='inline-block'; b.textContent='▶ Next busy area ('+(ODI+1)+' of '+N+')'; }
+function odStart(od){ ODSEED=null; odDraw(); const b=$('odnext'); if(b) b.style.display='none'; if(!od) return;
+ snote('Finding where Rubin looked on '+nightLabel(od.night)+'…');
+ odSeeds(od).then(s=>{ if(ODN!==od||!s) return; ODSEED=s; odDraw();
+   if(!s.cells.length){ snote('Fink lists no tagged alerts for '+nightLabel(od.night)+', so its footprint is unknown here. Zoom in anywhere to try.'); return; }
+   snote(nightLabel(od.night)+': Rubin’s alerts fall in about '+s.cells.length+' sky areas (blue dots). Flying to the busiest; use ▶ Next busy area or click a blue dot.'); odGo(0); }); }
+function odCounts(){""")
+rep("snote('Showing '+nightLabel(v)+': zoom in to load its alerts.'); cullAll(); renderList(); }", "cullAll(); renderList(); odStart(ODN); }")
+rep("if(stored){ ODN=null; clearFink(true); return selectStored(v); }", "if(stored){ ODN=null; clearFink(true); odStart(null); return selectStored(v); }")
+rep(" autoCone(ra0,de0,rad);", " autoCone(ra0,de0,rad); odShow(rad);")
+rep("aladin.on('objectClicked',o=>{ if(o&&o.data&&o.data.id){", "aladin.on('objectClicked',o=>{ if(o&&o.data&&o.data.odc!==undefined){ odGo(o.data.odc); return; } if(o&&o.data&&o.data.id){")
+rep('<button id="conebtn"', '<button id="odnext" style="display:none" title="Fly to the next area where Rubin observed on this night">▶ Next busy area</button><button id="conebtn"')
+rep("$('autocone').onchange=", "$('odnext').onclick=()=>odGo(ODI+1);\n $('autocone').onchange=")
+
 open(dst, 'w', encoding='utf-8').write(s)
 print('wrote', dst, len(s))
