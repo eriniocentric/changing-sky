@@ -97,6 +97,16 @@ header{position:relative}
 #infomodal.on{display:flex}
 #infobox{position:relative;max-width:620px;width:calc(100% - 40px);background:#0f1422;border:1px solid #2b3550;border-radius:12px;padding:18px 22px;font-size:13px;line-height:1.55;color:#d8dde8;box-shadow:0 10px 40px #000c}
 #infobox #infoclose{top:10px;right:10px}
+#watchmodal{display:none;position:fixed;inset:0;z-index:110;background:#000b;align-items:center;justify-content:center}
+#watchmodal.on{display:flex}
+#watchbox{position:relative;max-width:760px;width:calc(100% - 30px);max-height:calc(100% - 30px);overflow:auto;background:#0f1422;border:1px solid #2b3550;border-radius:12px;padding:16px 20px;font-size:13px;line-height:1.5;color:#d8dde8;box-shadow:0 10px 40px #000c}
+#watchclose{position:absolute;top:10px;right:10px}
+#watchbox .wflip{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start}#watchbox figure{margin:0;text-align:center}
+#watchbox canvas{width:150px;height:150px;image-rendering:pixelated;border-radius:6px;background:#0b0f17;display:block}
+#watchbox .wctx{position:relative;width:150px;height:150px;border-radius:6px;overflow:hidden;background:#000}#watchbox .wctx img{width:150px;height:150px;display:block}
+#watchbox .wctx .box{position:absolute;border:1.5px dashed #ffd166;left:55px;top:55px;width:40px;height:40px}
+#watchbox figcaption{font-size:11px;color:#9aa4b8;margin-top:2px}#watchbox .wctl{display:flex;gap:8px;align-items:center;margin:8px 0 2px;flex-wrap:wrap}
+#watchbox input[type=range]{flex:1;min-width:150px}#watchbox .wlab{font-variant-numeric:tabular-nums;font-size:12px}
 </style></head><body>
 <header>
  <div id="brand"><img id="logo" src="logo_full_220.png" alt="Changing Sky" height="110">
@@ -104,6 +114,7 @@ header{position:relative}
   <button id="infobtn" title="About this view">i</button></div>
  <div id="cdsnote"><span class="x" id="cdsx" title="Close">✕</span>The CDS Strasbourg sky servers are not responding right now, so the background sky comes from a mirror copy (NASA/IPAC IRSA or ESA ESASky) and only DSS2, 2MASS, AllWISE, SDSS and Pan-STARRS (from MAST) are available. Rubin's own deep sky maps, alerts, images from Rubin, deep Legacy Survey cutouts and voting still work.</div>
  <div id="acct"></div></header>
+<div id="watchmodal" role="dialog" aria-modal="true" aria-label="Watch it change"><div id="watchbox"><button id="watchclose" class="x" title="Close">✕</button><div id="watchbody"></div></div></div>
 <div id="infomodal" role="dialog" aria-modal="true" aria-labelledby="infotitle"><div id="infobox">
  <button id="infoclose" class="cbtn" title="Close (Esc)">✕</button>
  <div style="display:flex;gap:12px;align-items:center"><img src="logo_mark_180.png" alt="" width="64" height="64"><div><div id="infotitle" style="font-size:20px;font-weight:700">Changing <span style="color:#ffd43b">Sky</span></div>
@@ -451,7 +462,7 @@ function openAlert(a,fly){
   <div class="cbody">
   <div class="row"><div class="stamps" id="stamps">${stamp(a.sid,'Science','New')}${stamp(a.sid,'Template','Before')}${stamp(a.sid,'Difference','Change')}</div><div class="stamps" id="deepst"></div>
   <div id="lc"><div class="sub" style="padding:10px">Loading light curve…</div></div></div>
-  <div class="tools"><button id="colbtn" title="Combine this object's cutouts from different filters into a colour image">🎨 Colour</button><button id="sedbtn" title="Archival photometry from CDS VizieR plus Rubin's newest brightness">📈 SED</button><span id="colnote" class="sub"></span></div>
+  <div class="tools"><button id="colbtn" title="Combine this object's cutouts from different filters into a colour image">🎨 Colour</button><button id="watchbtn" title="Flip through Rubin's images of this spot, one frame per detection">▶ Watch it change</button><button id="sedbtn" title="Archival photometry from CDS VizieR plus Rubin's newest brightness">📈 SED</button><span id="colnote" class="sub"></span></div>
   <div id="sedbox" style="display:none"></div>
   ${a.xm?'<div class="expl"><b>Catalogue:</b> '+a.xm+'</div>':''}${a.sat?'<div class="expl" style="color:#ffa94d">🛰 '+a.sat+' — this detection could be a satellite glint.</div>':''}
   <div id="community"></div>
@@ -466,8 +477,73 @@ function openAlert(a,fly){
  $('card').style.display='block'; $('card').classList.remove('min'); $('minbtn').textContent='–';
  if(fly&&aladin){aladin.gotoRaDec(a.ra,a.dec); aladin.setFoV(0.08);}
  loadLC(a); loadCommunity(a); loadDeep(a);
- $('colbtn').onclick=()=>toggleColour(a); $('sedbtn').onclick=()=>toggleSED(a);
+ $('colbtn').onclick=()=>toggleColour(a); $('sedbtn').onclick=()=>toggleSED(a); $('watchbtn').onclick=()=>openWatch(a);
 }
+
+/* ---------- Watch it change: flip-book of every detection's stamps (pop-up) ---------- */
+const WN=41, WPIX=0.2/3600, WMAX=80; let W=null;
+function wcolour(v,lo,hi,div){ if(!isFinite(v)) return [11,15,23];
+ if(!div){ const s=(hi-lo)/8, f=Math.asinh(Math.max(0,v-lo)/s)/Math.asinh(8), g=Math.round(255*Math.min(1,f)); return [g,g,g]; }
+ const t=Math.max(-1,Math.min(1,v/hi)), A=t<0?[33,102,172]:[178,24,43], Z=[247,247,247], u=Math.abs(t); return [0,1,2].map(i=>Math.round(Z[i]+(A[i]-Z[i])*u)); }
+function wdraw(id,img,lo,hi,div){ const cv=$(id); if(!cv) return; const ctx=cv.getContext('2d'), im=ctx.createImageData(WN,WN);
+ for(let j=0;j<WN;j++) for(let i=0;i<WN;i++){ const c=wcolour(img?img[j*WN+i]:NaN,lo,hi,div), o=4*((WN-1-j)*WN+i); im.data[o]=c[0]; im.data[o+1]=c[1]; im.data[o+2]=c[2]; im.data[o+3]=255; } // north up
+ ctx.putImageData(im,0,0); }
+function wscale(){ const sci=[], dif=[]; W.frames.forEach(f=>{ if(!f.img) return; f.img.Science.forEach(v=>{ if(isFinite(v)) sci.push(v); }); f.img.Difference.forEach(v=>{ if(isFinite(v)) dif.push(Math.abs(v)); }); });
+ W.lo=pctl(sci,0.01); W.hi=pctl(sci,0.997); W.dm=pctl(dif,0.995)||1; }
+function wsvg(){ const F=W.frames, Wd=Math.max(300,($('wlc')&&$('wlc').clientWidth)||560), H=150, L=44, R=8, T=14, B=24;
+ const ts=F.map(f=>f.t); let t0=Math.min(...ts), t1=Math.max(...ts); const pt=Math.max(1,(t1-t0)*0.04); t0-=pt; t1+=pt;
+ let y0=Math.min(0,...F.map(f=>f.y-f.e)), y1=Math.max(0,...F.map(f=>f.y+f.e)); const py=(y1-y0)*0.08||1; y0-=py; y1+=py;
+ const sx=v=>L+(v-t0)/(t1-t0)*(Wd-L-R), sy=v=>T+(y1-v)/(y1-y0)*(H-T-B), xt=niceTicks(t0,t1,4), yt=niceTicks(y0,y1,4);
+ let s=`<svg width="${Wd}" height="${H}" style="display:block;font:9px system-ui,sans-serif">`;
+ xt.ticks.forEach(v=>{ const X=sx(v).toFixed(1); s+=`<line x1="${X}" x2="${X}" y1="${T}" y2="${H-B}" stroke="#222a3a"/><text x="${X}" y="${H-B+11}" fill="#9aa4b8" text-anchor="middle">${Math.round(v)}</text>`; });
+ yt.ticks.forEach(v=>{ const Y=sy(v).toFixed(1); s+=`<line x1="${L}" x2="${Wd-R}" y1="${Y}" y2="${Y}" stroke="#222a3a"/><text x="${L-3}" y="${(+Y+3).toFixed(1)}" fill="#9aa4b8" text-anchor="end">${+v.toPrecision(3)}</text>`; });
+ s+=`<line x1="${L}" x2="${Wd-R}" y1="${sy(0).toFixed(1)}" y2="${sy(0).toFixed(1)}" stroke="#55607a" stroke-dasharray="3 3"/><text x="${L}" y="9" fill="#c8cfdd">change vs reference (μJy) · MJD · click a point to jump there</text>`;
+ F.forEach((f,i)=>{ const X=sx(f.t).toFixed(1), Y=sy(f.y).toFixed(1), c=BANDC[f.band]||'#ccc', on=i===W.i;
+   if(f.e>0) s+=`<line x1="${X}" x2="${X}" y1="${sy(f.y-f.e).toFixed(1)}" y2="${sy(f.y+f.e).toFixed(1)}" stroke="${c}" opacity="0.6"/>`;
+   s+=`<circle data-wi="${i}" cx="${X}" cy="${Y}" r="${on?5.5:3}" fill="${c}" stroke="${on?'#fff':'none'}" stroke-width="2" opacity="${f.img?1:0.35}" style="cursor:pointer"/>`; });
+ return s+'</svg>'; }
+function wshow(i){ if(!W) return; W.i=i; const f=W.frames[i];
+ if(f.img){ wdraw('wsci',f.img.Science,W.lo,W.hi,false); wdraw('wtpl',f.img.Template,W.lo,W.hi,false); wdraw('wdif',f.img.Difference,0,W.dm,true); }
+ else { ['wsci','wtpl','wdif'].forEach(id=>wdraw(id,null,0,1,false)); }
+ $('wrange').value=i; const d=new Date((f.t-40587)*86400000-37000).toISOString().replace('T',' ').slice(0,16);
+ $('wlab').textContent=`${i+1}/${W.frames.length} · ${d} UTC · filter ${f.band} · ${f.y>=0?'+':''}${f.y.toFixed(1)} μJy vs reference${f.img?'':(f.err?' · image unavailable':' · loading…')}`;
+ $('wlc').innerHTML=wsvg(); }
+async function wload(f){ for(let k=0;k<3;k++){ try{
+   const [arr,hdr]=await Promise.all([fetch(F+'/cutouts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({diaSourceId:f.sid,kind:'All','output-format':'array'})}).then(r=>{ if(!r.ok) throw new Error(r.status); return r.json(); }),
+     fetchFITS(f.sid,'Science')]);
+   const img={}; for(const kd of ['Science','Template','Difference']){ const a2=arr['b:cutout'+kd]; if(!a2) throw new Error('no '+kd);
+     const ny=a2.length, nx=a2[0].length, d=new Float64Array(nx*ny); for(let y=0;y<ny;y++) for(let x=0;x<nx;x++) d[y*nx+x]=a2[y][x]==null?NaN:a2[y][x];
+     img[kd]=regrid({H:hdr.H,nx:nx,ny:ny,d:d},W.ra,W.dec,WN,WPIX); }
+   return img; }catch(e){ await new Promise(r=>setTimeout(r,1500*(k+1))); } } throw new Error('failed'); }
+function closeWatch(){ if(W){ W.stop=true; if(W.timer) clearInterval(W.timer); } W=null; $('watchmodal').classList.remove('on'); }
+async function openWatch(a){ closeWatch(); $('watchmodal').classList.add('on');
+ $('watchbody').innerHTML='<div class="sub" style="padding:10px">Loading this object\'s detections from Fink…</div>';
+ const rows=(a._lc&&a._lc.length)?a._lc:await (a._lcP||Promise.resolve([]));
+ let fr=rows.filter(r=>r['r:diaSourceId']!=null).map(r=>({sid:String(r['r:diaSourceId']),t:+r['r:midpointMjdTai'],band:r['r:band'],y:(+r['r:psfFlux']||0)/1000,e:(+r['r:psfFluxErr']||0)/1000})).sort((x,y)=>x.t-y.t);
+ const total=fr.length; if(fr.length>WMAX){ const keep=[]; for(let k=0;k<WMAX;k++) keep.push(fr[Math.round(k*(fr.length-1)/(WMAX-1))]); fr=keep; }
+ if(fr.length<2){ $('watchbody').innerHTML=`<h3 style="margin:0 0 6px">Watch it change</h3><div class="sub">Rubin has detected this object ${fr.length===1?'only once':'no times'} so far, so there is nothing to flip through yet. Objects that move (asteroids) get a new Rubin ID at every detection, so they always show a single frame here.</div>`; return; }
+ W={a:a,frames:fr,i:fr.length-1,ra:a.ra,dec:a.dec,lo:0,hi:1,dm:1,timer:null,stop:false};
+ const ctx=`https://www.legacysurvey.org/viewer/cutout.jpg?ra=${a.ra}&dec=${a.dec}&layer=ls-dr11&pixscale=0.4&size=150`;
+ $('watchbody').innerHTML=`<h3 style="margin:0 0 2px">Watch it change · ${esc(a.name||('Rubin object '+a.id))}</h3>
+ <div class="sub">Every Rubin detection of this spot (${fr.length}${total>fr.length?' of '+total+', evenly spaced':''}), rotated north-up and shown on one fixed brightness scale, so changes between frames are real. Red = brighter than the reference, blue = fainter.</div>
+ <div class="wflip" style="margin-top:8px"><figure><canvas id="wsci" width="${WN}" height="${WN}"></canvas><figcaption>Rubin now</figcaption></figure><figure><canvas id="wtpl" width="${WN}" height="${WN}"></canvas><figcaption>Reference (before)</figcaption></figure>
+ <figure><canvas id="wdif" width="${WN}" height="${WN}"></canvas><figcaption>Difference</figcaption></figure><figure><div class="wctx"><img src="${ctx}" alt="Legacy Surveys 1 arcmin view"><div class="box"></div></div><figcaption>1′ around it (Legacy DR11)</figcaption></figure></div>
+ <div class="wctl"><button id="wplay">▶ Play</button><input type="range" id="wrange" min="0" max="${fr.length-1}" value="${fr.length-1}"><span class="sub" id="wprog"></span></div>
+ <div class="wlab" id="wlab"></div><div id="wlc" style="margin-top:4px"></div>
+ <div class="sub" style="margin-top:4px">Stamps are 8″ across (dashed box on the 1′ view). Only detections are shown: nights when the change was too small to trigger an alert have no frame.</div>`;
+ $('wrange').oninput=e=>wshow(+e.target.value);
+ $('wlc').onclick=e=>{ const i=e.target.dataset&&e.target.dataset.wi; if(i!==undefined) wshow(+i); };
+ $('wplay').onclick=()=>{ if(!W) return; if(W.timer){ clearInterval(W.timer); W.timer=null; $('wplay').textContent='▶ Play'; return; }
+   $('wplay').textContent='❚❚ Pause'; W.timer=setInterval(()=>{ if(!W) return; let n=W.i; for(let k=0;k<W.frames.length;k++){ n=(n+1)%W.frames.length; if(W.frames[n].img) break; } wshow(n); },600); };
+ wshow(W.i);
+ const me=W; let next=fr.length-1, done=0, bad=0; const order=fr.map((_,k)=>fr.length-1-k);   // newest first
+ async function worker(){ while(order.length&&!me.stop){ const k=order.shift(), f=fr[k];
+   try{ f.img=await wload(f); }catch(e){ f.err=true; bad++; } if(me.stop) return; done++;
+   if(f.img){ wscale(); } $('wprog').textContent=done<fr.length?`loading images ${done}/${fr.length}…`:(bad?`${bad} image${bad>1?'s':''} could not be loaded`:'');
+   wshow(W.i); } }
+ await Promise.all([worker(),worker(),worker()]); }
+$('watchclose').onclick=closeWatch; $('watchmodal').onclick=e=>{ if(e.target.id==='watchmodal') closeWatch(); };
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&W) closeWatch(); });
 /* ---------- colour composite from single-band alert cutouts ---------- */
 function parseFITS(buf){ const u=new Uint8Array(buf); let off=0, H={}, end=false;
  while(!end&&off<u.length){ for(let i=0;i<36;i++){ const card=String.fromCharCode.apply(null,u.subarray(off+i*80,off+i*80+80)); const k=card.slice(0,8).trim();
