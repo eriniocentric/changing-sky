@@ -178,8 +178,9 @@ let autoT=null, PENDOPEN=null, FROWS=new Map();
 function autoCone(ra0,de0,rad){ const ab=$('autocone'); if(!ab||!ab.checked||rad>CONE_MAX||!visible.size||coneBusy) return;
  if(FCONE && sepDeg(ra0,de0,FCONE.ra,FCONE.dec)<FCONE.rad*0.35 && rad<=FCONE.rad*1.3) return;
  clearTimeout(autoT); autoT=setTimeout(()=>coneSearch(),900); }
-async function fpost(ep,body){ const r=await fetch(F+'/'+ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({'output-format':'json'},body))});
- if(!r.ok) throw new Error(ep+' HTTP '+r.status); const j=bigJSON(await r.text()); return Array.isArray(j)?j:[]; }
+async function fpost(ep,body){ let r=null; for(let k=0;k<3;k++){ r=await fetch(F+'/'+ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({'output-format':'json'},body))});
+   if(r.ok||![502,503,504].includes(r.status)) break; await new Promise(z=>setTimeout(z,2500*(k+1))); }
+ if(!r.ok) throw new Error(ep+' HTTP '+r.status+(r.status>=500?' — Fink is busy':'')); const j=bigJSON(await r.text()); return Array.isArray(j)?j:[]; }
 function parseCoords(q){ const s=q.trim(); if(!/^[-+0-9.:\shmsd°'",]+$/i.test(s)) return null; const sex=/[:hms°'"]/.test(s);
  const tk=s.replace(/[hmsd°'",:]/gi,' ').trim().split(/\s+/); if(tk.some(x=>!/^[-+]?\d+(\.\d+)?$/.test(x))) return null;
  let ra,de;
@@ -243,14 +244,62 @@ rep('#nightrow select{width:100%;', '#right .tabs{display:none}\n#moreopts{margi
 m = re.search(r"function buildNightPicker\(\)\{.*?\.toLocaleString\(\)\+'</option>':''\); \}\n", s, re.S); assert m and m.group(0).count('function buildNightPicker')==1
 s = s.replace(m.group(0), r"""function monthKey(n){ return String(n).slice(0,6); }
 function monthLabel(k){ const M=['January','February','March','April','May','June','July','August','September','October','November','December']; return M[+k.slice(4,6)-1]+' '+k.slice(0,4); }
-function fillNights(mk,pick){ const s=$('nightsel'), latest=NIGHTS[NIGHTS.length-1].night, L=NIGHTS.filter(n=>monthKey(n.night)===mk).slice().reverse();
- s.innerHTML=L.map(n=>'<option value="'+n.night+'">'+(n.night===latest?'Latest · ':'')+nightLabel(n.night)+' · '+n.n.toLocaleString()+' alerts</option>').join('');
- s.value=pick||(L[0]&&L[0].night); }
-function buildNightPicker(){ const ms=$('monthsel'), keys=[...new Set(NIGHTS.map(n=>monthKey(n.night)))].reverse();
- ms.innerHTML=keys.map(k=>{ const c=NIGHTS.filter(n=>monthKey(n.night)===k).length; return '<option value="'+k+'">'+monthLabel(k)+' · '+c+' night'+(c>1?'s':'')+'</option>'; }).join('');
- ms.value=keys[0]; fillNights(keys[0]);
+function fillNights(mk,pick){ const s=$('nightsel'), L=ALLN.filter(n=>monthKey(n.night)===mk).slice().reverse(), newest=ALLN.length?ALLN[ALLN.length-1].night:'';
+ s.innerHTML=L.map(n=>'<option value="'+n.night+'">'+(n.night===newest?'Latest · ':'')+nightLabel(n.night)+' · '+(n.stored?n.n.toLocaleString()+' alerts, whole sky':(n.fink?n.fink.toLocaleString()+' alerts · zoom in to load':'zoom in to load'))+'</option>').join('');
+ const st=L.find(n=>n.stored); s.value=pick||(st?st.night:(L[0]&&L[0].night)); }
+function buildNightPicker(){ if(!ALLN.length) ALLN=NIGHTS.map(n=>({night:n.night,n:n.n,stored:true})); ALLN.forEach(a=>{ const s=NIGHTS.find(n=>n.night===a.night); if(s){ a.stored=true; a.n=s.n; } });
+ const ms=$('monthsel'), keys=[...new Set(ALLN.map(n=>monthKey(n.night)))].reverse(), stk=monthKey(NIGHTS[NIGHTS.length-1].night);
+ ms.innerHTML=keys.map(k=>{ const c=ALLN.filter(n=>monthKey(n.night)===k).length; return '<option value="'+k+'">'+monthLabel(k)+' · '+c+' night'+(c>1?'s':'')+'</option>'; }).join('');
+ ms.value=stk; fillNights(stk);
  ms.onchange=()=>{ fillNights(ms.value); selectNights($('nightsel').value); }; }
 """, 1)
 
+
+# ---------- 8. only the latest night is stored; any other Fink night loads on demand when zoomed in (added 2026-11-17) ----------
+rep("function selectNights(v){", "function selectStored(v){")
+rep("const FCOLS=", "let ODN=null, ALLN=[];\nconst SCOLS='r:diaObjectId,r:diaSourceId,r:ra,r:dec,r:band,r:psfFlux,r:snr,r:reliability,r:midpointMjdTai,r:isDipole,r:glint_trail,r:pixelFlags_saturatedCenter,r:trailLength';\nconst FCOLS=")
+rep("<b>Area search</b> (Fink, every date since Oct 2025, within '", "<b>'+(ODN?'Alerts of '+nightLabel(ODN.night):'Area search')+'</b> (Fink, '+(ODN?'that night only':'every date since Oct 2025')+', within '")
+rep("function autoCone(ra0,de0,rad){ const ab=$('autocone'); if(!ab||!ab.checked||rad>CONE_MAX||!visible.size||coneBusy) return;",
+    "function autoCone(ra0,de0,rad){ const ab=$('autocone'); if(((!ab||!ab.checked)&&!ODN)||rad>CONE_MAX||!visible.size||coneBusy) return;")
+rep(" CATS.forEach(([k,label,col])=>{ if(!n[k]) return;", " CATS.forEach(([k,label,col])=>{ if(!n[k]&&!(ODN&&k!=='sso')) return;")
+rep("${label}<span class=\"cnt\">${n[k].toLocaleString()}</span>", "${label}<span class=\"cnt\">${n[k]?n[k].toLocaleString():'–'}</span>")
+m = re.search(r"async function coneSearch\(\)\{.*?finally\{ coneBusy=false; b\.disabled=false; b\.textContent='🔎 All alerts here \(Fink, all dates\)'; \} \}\n", s, re.S); assert m
+s = s.replace(m.group(0), r"""async function coneSearch(){ if(coneBusy||!aladin) return; let ra0,de0,fov; try{ [ra0,de0]=aladin.getRaDec(); fov=Math.max.apply(null,aladin.getFov()); }catch(e){ return; }
+ if(!visible.size&&!coneSearch.force){ $('conenote').style.display='block'; $('conenote').textContent='Choose one or more alert types first; the search returns those types.'; return; }
+ const rad=Math.min(CONE_MAX,fov*0.75), b=$('conebtn'), od=ODN; coneBusy=true; b.disabled=true; b.textContent='🔎 Searching Fink…';
+ try{ const body={ra:ra0,dec:de0,radius:Math.round(rad*3600),n:100,columns:FCOLS};
+   if(od){ Object.assign(body,{startdate:od.S,stopdate:od.E,kind:'across'}); snote('Loading the alerts of '+nightLabel(od.night)+' in view from Fink…'); }
+   const rows=await fpost('conesearch',body); let use=rows;
+   if(od){ const byId=new Map(rows.map(x=>[String(x['r:diaObjectId']),x])), multi=[];
+     use=[]; rows.forEach(x=>{ if(Math.abs((+x['r:midpointMjdTai'])-(+x['f:firstDiaSourceMjdTaiFink']))>1e-6) multi.push(String(x['r:diaObjectId'])); else if(+x['r:midpointMjdTai']>=od.m0&&+x['r:midpointMjdTai']<=od.m1) use.push(x); });
+     for(let k=0;k<multi.length;k+=300){ if(ODN!==od) return; snote('Loading the alerts of '+nightLabel(od.night)+' in view: light curves '+Math.min(k+300,multi.length)+' of '+multi.length+'…');
+       const src=await fpost('sources',{diaObjectId:multi.slice(k,k+300).join(','),columns:SCOLS}); const best=new Map();
+       src.forEach(d=>{ const t=+d['r:midpointMjdTai']; if(t<od.m0||t>od.m1) return; const id=String(d['r:diaObjectId']), q=(d['r:isDipole']||d['r:pixelFlags_saturatedCenter'])?-1:(+d['r:snr']||0), o=best.get(id);
+         if(!o||q>o.q) best.set(id,{q:q,d:d}); });
+       best.forEach((v,id)=>{ const x=Object.assign({},byId.get(id)||{},v.d); use.push(x); }); } }
+   if(od&&ODN!==od) return;
+   clearFink(false); const seen=new Set(); FROWS=new Map();
+   use.forEach(x=>{ FROWS.set(String(x['r:diaObjectId']),x); const a=finkObj(x); if(!a||seen.has(a.id)) return; seen.add(a.id); if(od) a.src='Fink, alerts of '+nightLabel(od.night)+' (loaded on demand)';
+     const own=BYID.get(a.id); if(own&&!own.fink&&!od){ a.cat=own.cat; a.name=own.name||a.name; a.xm=own.xm; } FINKRES.push(a); BYKEY.set(a.key,a); });
+   FCONE={ra:ra0,dec:de0,rad:rad,n:use.length}; drawFink(); showFinkSummary(); renderListSoon(); if(od) odCounts();
+ }catch(e){ $('conenote').style.display='block'; $('conenote').textContent='The Fink search did not work ('+e.message+'). Try again, or a smaller area.'; }
+ finally{ coneBusy=false; b.disabled=false; b.textContent='🔎 All alerts here (Fink, all dates)'; } }
+""", 1)
+rep("function mjdUTC(m){", r"""function odWin(night){ const s=String(night), d=Date.UTC(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8)), a=new Date(d-6*3600e3), b=new Date(d+14*3600e3), f=x=>x.toISOString().slice(0,19).replace('T',' ');
+ return {night:s,S:f(a),E:f(b),m0:a.getTime()/864e5+40587,m1:b.getTime()/864e5+40587}; }
+function odCounts(){ const c={}; FINKRES.forEach(a=>c[a.cat]=(c[a.cat]||0)+1); document.querySelectorAll('#cats .cat').forEach(d=>{ const e=d.querySelector('.cnt'); if(e) e.textContent=(c[d.dataset.k]||0).toLocaleString(); }); }
+function selectNights(v){ const stored=NIGHTS.some(n=>n.night===v);
+ if(stored){ ODN=null; clearFink(true); return selectStored(v); }
+ stopPlay(); ODN=odWin(v); clearFink(true); SELN=new Set([v]); MANIFEST={}; TIME.visits=[];
+ $('cats').innerHTML=''; buildCats(); setupSlider(); const f=ALLN.find(n=>n.night===v);
+ $('nightinfo').textContent=(f&&f.fink?f.fink.toLocaleString()+' alerts that night in Fink. ':'')+'Not stored here: zoom in (view under about 1.5° across) to load that night\'s alerts in view from Fink.';
+ snote('Showing '+nightLabel(v)+': zoom in to load its alerts.'); cullAll(); renderList(); }
+async function loadFinkNights(){ try{ const st=await fpost('statistics',{date:''}); const m=new Map(ALLN.map(n=>[n.night,n]));
+   st.forEach(x=>{ const k=String(x['f:night']), a=+x['f:alerts']||0; if(!k||!a) return; const o=m.get(k); if(o) o.fink=a; else m.set(k,{night:k,fink:a,stored:false}); });
+   ALLN=[...m.values()].sort((x,y)=>x.night<y.night?-1:1); const ms=$('monthsel').value, ns=$('nightsel').value; buildNightPicker(); $('monthsel').value=ms; fillNights(ms,ns);
+ }catch(e){ console.warn('Fink night list',e); } }
+function mjdUTC(m){""")
+
+rep("selectNights(NIGHTS[NIGHTS.length-1].night); })", "selectNights(NIGHTS[NIGHTS.length-1].night); loadFinkNights(); })")
 open(dst, 'w', encoding='utf-8').write(s)
 print('wrote', dst, len(s))

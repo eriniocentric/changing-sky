@@ -16,7 +16,7 @@ import numpy as np, pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fink_night as fn, xmatch
 
-WINDOW = 30      # nights kept on the site
+WINDOW = 1       # nights kept on the site (only the latest; older nights load from Fink on demand)
 TOPK = 200       # objects per type in top.json
 TB = 64          # tile bands: 180/64 = 2.8125 deg
 

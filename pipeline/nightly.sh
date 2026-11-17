@@ -11,7 +11,7 @@
 # Needs: GH_TOKEN and GITHUB_REPOSITORY in the environment; PY = python with requests, numpy, pandas, pyarrow.
 set -euo pipefail
 EVENT="${1:-workflow_dispatch}"
-RAW_KEEP="${RAW_KEEP:-7}"
+RAW_KEEP="${RAW_KEEP:-1}"
 PY="${PY:-python3}"
 REPO_URL="${REPO_URL:-https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git}"   # REPO_URL may be overridden for local tests
 
