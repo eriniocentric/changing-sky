@@ -137,7 +137,7 @@ header{position:relative}
   <input id="q" placeholder="Filter, or press Enter to search: Rubin ID, SN/AT name, RA Dec, object name">
   <select id="sort"><option value="snr">Sort: strongest signal</option><option value="mag">Sort: brightest change</option><option value="rel">Sort: most reliable</option><option value="ra">Sort: right ascension</option></select>
   <div id="nshow" class="sub"></div><div id="list"></div>
-  <details><summary>How these alerts were chosen</summary>Collected from the Fink broker public API for the night of 2026-07-14 (UTC): six Fink science streams paged through the night, the latest objects in ~190 catalogue classes, and 378807 objects from 1-degree cone searches over the night's observed fields. Of 383,635 unique detections that night, artefacts were removed (subtraction dipoles, glint trails, saturated cores, SNR&nbsp;&lt;&nbsp;5), leaving 283,613; unidentified detections also had to have reliability ≥ 0.8 (194,279 left). One detection per object is shown (the strongest that night): 196,488 objects. Types combine Fink's cross-matches (TNS, VSX, blazar catalogues, HyperLEDA) with our own 1-arcsecond cross-match of every object against SIMBAD, Gaia DR3 (variability flag, star/quasar/galaxy probabilities, parallax) and the Milliquas quasar catalogue via the CDS XMatch service, because Fink's SIMBAD match was unavailable for this night. Asteroids (22,714 objects, 32,635 detections) come from Fink's monthly Solar System table (version 2026.10), which links each detection to a known body; their histories cover all Rubin detections since MJD 61191. Fink recorded 403,821 objects that night, so this is a large but incomplete sample.</details>
+  <details><summary>Where these alerts come from</summary>Each night, every alert that Rubin sent to the Fink broker is collected, then quality cuts remove subtraction artefacts (dipoles, saturated pixels) and weak detections (signal-to-noise below 5; unidentified alerts also need Rubin's reliability score of at least 0.8). Alerts are labelled from catalogue cross-matches such as the Transient Name Server, SIMBAD, Gaia and the VSX variable-star index. Known asteroids come from Fink's Solar System table. Zoomed in, the page can also ask Fink for every alert ever issued in view (squares). Nothing here is an official Rubin classification.</details>
   <details><summary>What am I looking at?</summary>Each alert compares a <b>new image</b> with a <b>template</b> built from earlier images of the same spot. The <b>difference</b> keeps only what changed (red: brighter now; blue: fainter). Each cutout is 6 arcseconds across. The light curve shows how the change evolves; colours mark Rubin's filters u g r i z y (ultraviolet → near-infrared). Fluxes are differences from the template, so they can be negative when a source has faded. The big sky view comes from other surveys and shows the surroundings.</details>
   </div>
   <div id="tab-top" style="display:none"></div><div id="tab-fu" style="display:none"></div>
@@ -164,7 +164,7 @@ const MAXPER=4000;
 function sepDeg(ra1,de1,ra2,de2){ const r=Math.PI/180; const c=Math.sin(de1*r)*Math.sin(de2*r)+Math.cos(de1*r)*Math.cos(de2*r)*Math.cos((ra1-ra2)*r); return Math.acos(Math.max(-1,Math.min(1,c)))/r; }
 function makeLayer(k){
  if(!aladin||layers[k]||!BYCAT[k]) return; const c=catInfo[k];
- const cat=A.catalog({name:c[1],color:c[2],sourceSize:k==='star'?6:9,shape:'circle'}); aladin.addCatalog(cat); layers[k]=cat; cullAll();
+ const cat=A.catalog({name:c[1],color:c[2],sourceSize:k==='star'?6:9,shape:'circle',selectionColor:'#ffffff'}); aladin.addCatalog(cat); layers[k]=cat; cullAll();
 }
 let cullT=null; function scheduleCull(){ clearTimeout(cullT); cullT=setTimeout(cullAll,180); }
 function cullAll(){
@@ -597,7 +597,7 @@ function openSSO(a,fly){
  if(fly&&aladin){ aladin.gotoRaDec(a.ra,a.dec); aladin.setFoV(0.5); }
  loadCommunity(a);
 }
-function closeCard(){ clearPath(); $('card').style.display='none'; sel=null; document.querySelectorAll('.item.sel').forEach(e=>e.classList.remove('sel')); }
+function closeCard(){ clearPath(); try{ if(aladin&&aladin.view) aladin.view.unselectObjects(); }catch(e){} $('card').style.display='none'; sel=null; document.querySelectorAll('.item.sel').forEach(e=>e.classList.remove('sel')); }
 $('close').onclick=closeCard;
 $('cdswarn').onclick=()=>{ const n=$('cdsnote'); n.style.display=(n.style.display==='block')?'none':'block'; }; $('cdsx').onclick=()=>{ $('cdsnote').style.display='none'; };
 $('infobtn').onclick=()=>$('infomodal').classList.add('on'); $('infoclose').onclick=()=>$('infomodal').classList.remove('on');
@@ -710,7 +710,7 @@ Promise.all([aladinLoaded().then(()=>A.init),mirrorP]).then(()=>{
  let satOv=null, satLab=null;
  $('satbox').onchange=()=>{ const on=$('satbox').checked;
   if(on&&!satOv){ satOv=A.graphicOverlay({name:'Satellite tracks',color:'#ff922b',lineWidth:2}); aladin.addOverlay(satOv);
-    satLab=A.catalog({name:'Satellite labels',color:'#ff922b',sourceSize:10,shape:'cross'}); aladin.addCatalog(satLab);
+    satLab=A.catalog({name:'Satellite labels',color:'#ff922b',sourceSize:10,shape:'cross',selectionColor:'#ffffff'}); aladin.addCatalog(satLab);
     SATS.forEach(s=>{ try{ satOv.add(A.polyline(s[6])); }catch(e){}
       const m=s[6][Math.floor(s[6].length/2)];
       satLab.addSources([A.marker(m[0],m[1],{popupTitle:`🛰 ${s[1]}`,popupDesc:`NORAD ${s[0]} · ${s[2]}<br>Crossed this field at ${s[3]} UTC, 14 July 2026<br>Distance ≈ ${Number(s[4]).toLocaleString()} km`})]); }); }

@@ -49,7 +49,10 @@ table.m{font-size:12px;border-collapse:collapse} table.m td{padding:1px 10px 1px
 .tile.na{opacity:.3;cursor:not-allowed} .offl{color:#ff8787}
 .deepfig a{display:block;position:relative;width:76px;height:76px;margin:0 auto} .deepfig svg.fp{position:absolute;left:0;top:0;width:76px;height:76px;pointer-events:none}
 .stamps img.deep{image-rendering:auto}
-#nightrow select{width:100%;background:#141a28;color:#e6e9ef;border:1px solid #2b3550;border-radius:5px;padding:3px;font-size:12px}
+#right .tabs{display:none}
+#moreopts{margin:6px 0 2px}#moreopts summary{cursor:pointer;font-size:12px;color:#c8cfdd}#moreopts .cat{margin-left:2px}
+#nightrow{display:flex;flex-wrap:wrap;gap:4px}#nightrow #monthsel{flex:0 0 42%}#nightrow #nightsel{flex:1}#nightinfo{width:100%}
+#nightrow select{background:#141a28;color:#e6e9ef;border:1px solid #2b3550;border-radius:5px;padding:3px;font-size:12px}
 #nightinfo{font-size:10.5px;margin:2px 0 4px}
 #timerow{flex-wrap:wrap;gap:4px;align-items:center;margin:2px 0 6px} #timerow input[type=range]{flex:1;min-width:120px}
 #timerow button{background:#141a28;color:#e6e9ef;border:1px solid #2b3550;border-radius:5px;padding:1px 8px;cursor:pointer}
@@ -136,20 +139,22 @@ header{position:relative}
  <div class="panel" id="right">
   <div class="tabs"><button data-t="explore" class="on">Explore</button><button data-t="top">▲ Most wanted</button><button data-t="fu">Follow-up</button></div>
   <div id="tab-explore">
-  <div class="ph">Night</div><div id="nightrow"><select id="nightsel"></select><div id="nightinfo" class="sub"></div></div>
+  <div class="ph">Night</div><div id="nightrow"><select id="monthsel" title="Month"></select><select id="nightsel" title="Night"></select><div id="nightinfo" class="sub"></div></div>
+  <div class="ph flash" id="cathead">▸ Alert types — click to show/hide</div><div id="cats" class="flash"></div>
+  <details id="moreopts"><summary>⚙ More options</summary>
   <label class="cat" style="cursor:pointer"><input type="checkbox" id="timebox"> ⏱ Time view: step through the exposures</label>
   <div id="timerow" style="display:none"><button id="playbtn" title="Play / pause">▶</button><input type="range" id="tslider" min="0" max="0" value="0"><select id="trail" title="Which alerts to keep on the sky"><option value="visit">this exposure only</option><option value="hour">the last hour</option><option value="night" selected>this night so far</option><option value="all">everything so far</option></select><div id="tlabel" class="sub"></div></div>
   <label class="cat" style="cursor:pointer" title="When the view is under about 1.5 degrees across, ask Fink for every alert it has ever issued there (all dates since Oct 2025), not only the selected night. They are drawn as squares and added to the list."><input type="checkbox" id="autocone" checked> 🔎 Zoomed in: load every alert ever seen here</label>
   <label class="cat" style="cursor:pointer" title="When zoomed out, only the strongest alerts are drawn. Circles mark sky patches holding more of the selected types; bigger means more. Zoom in to see them all."><input type="checkbox" id="densbox"> ◌ Show where more alerts are (zoomed out)</label>
-  <div class="ph flash" id="cathead">▸ Alert types — click to show/hide</div><div id="cats" class="flash"></div>
-  <div class="ph">🛰 Satellites</div>
+  
   <label class="cat" style="cursor:pointer"><input type="checkbox" id="satbox"> <span class="dot" style="background:#ff922b"></span>Predicted sunlit satellite tracks<span class="cnt" id="satcnt"></span></label>
   <details><summary>What the satellite layer shows</summary>Orange lines are the paths of catalogued satellites that crossed one of Rubin's fields while lit by the Sun, during the ~30-second exposure, predicted from public orbital elements (Space-Track.org) seen from Cerro Pachón. Click a label to see which satellite it was. Satellites in Earth's shadow reflect no sunlight and are not drawn. In July (southern winter) almost all low satellites are in shadow during the night, so most tracks here belong to distant geostationary and high-orbit objects. Rubin itself suppresses alerts from known satellites; the <b>Rubin-flagged glint trails</b> alert type shows flashes its pipeline flagged anyway.</details>
+  </details>
   <div class="ph">Find</div>
   <input id="q" placeholder="Filter, or press Enter to search: Rubin ID, SN/AT name, RA Dec, object name">
   <select id="sort"><option value="snr">Sort: strongest signal</option><option value="mag">Sort: brightest change</option><option value="rel">Sort: most reliable</option><option value="ra">Sort: right ascension</option></select>
   <div id="nshow" class="sub"></div><div id="list"></div>
-  <details><summary>How these alerts were chosen</summary>Collected from the Fink broker public API for the night of 2026-07-14 (UTC): six Fink science streams paged through the night, the latest objects in ~190 catalogue classes, and 378807 objects from 1-degree cone searches over the night's observed fields. Of 383,635 unique detections that night, artefacts were removed (subtraction dipoles, glint trails, saturated cores, SNR&nbsp;&lt;&nbsp;5), leaving 283,613; unidentified detections also had to have reliability ≥ 0.8 (194,279 left). One detection per object is shown (the strongest that night): 196,488 objects. Types combine Fink's cross-matches (TNS, VSX, blazar catalogues, HyperLEDA) with our own 1-arcsecond cross-match of every object against SIMBAD, Gaia DR3 (variability flag, star/quasar/galaxy probabilities, parallax) and the Milliquas quasar catalogue via the CDS XMatch service, because Fink's SIMBAD match was unavailable for this night. Asteroids (22,714 objects, 32,635 detections) come from Fink's monthly Solar System table (version 2026.10), which links each detection to a known body; their histories cover all Rubin detections since MJD 61191. Fink recorded 403,821 objects that night, so this is a large but incomplete sample.</details>
+  <details><summary>Where these alerts come from</summary>Each night, every alert that Rubin sent to the Fink broker is collected, then quality cuts remove subtraction artefacts (dipoles, saturated pixels) and weak detections (signal-to-noise below 5; unidentified alerts also need Rubin's reliability score of at least 0.8). Alerts are labelled from catalogue cross-matches such as the Transient Name Server, SIMBAD, Gaia and the VSX variable-star index. Known asteroids come from Fink's Solar System table. Zoomed in, the page can also ask Fink for every alert ever issued in view (squares). Nothing here is an official Rubin classification.</details>
   <details><summary>What am I looking at?</summary>Each alert compares a <b>new image</b> with a <b>template</b> built from earlier images of the same spot. The <b>difference</b> keeps only what changed (red: brighter now; blue: fainter). Each cutout is 6 arcseconds across. The light curve shows how the change evolves; colours mark Rubin's filters u g r i z y (ultraviolet → near-infrared). Fluxes are differences from the template, so they can be negative when a source has faded. The big sky view comes from other surveys and shows the surroundings.</details>
   </div>
   <div id="tab-top" style="display:none"></div><div id="tab-fu" style="display:none"></div>
@@ -227,7 +232,7 @@ function finkObj(r,force){ const c=finkClassify(r)||(force?['unk',null,'below th
   xm:(c[2]?c[2]+' · ':'')+'type from Fink cross-matches',age:null,src:'Fink area search (all dates)',ss:null};
  const f0=+r['f:firstDiaSourceMjdTaiFink']; if(f0) a.age=Math.max(0,Math.floor(m-f0)); a.night=fnight(m); a.key=id+'@fink'; a.fink=true; return a; }
 function drawFink(){ if(!aladin) return; Object.keys(FLAYERS).forEach(k=>FLAYERS[k].removeAll());
- FINKRES.forEach(a=>{ if(!visible.has(a.cat)) return; if(!FLAYERS[a.cat]){ const c=catInfo[a.cat]; FLAYERS[a.cat]=A.catalog({name:'Area search: '+c[1],color:c[2],sourceSize:12,shape:'square'}); aladin.addCatalog(FLAYERS[a.cat]); }
+ FINKRES.forEach(a=>{ if(!visible.has(a.cat)) return; if(!FLAYERS[a.cat]){ const c=catInfo[a.cat]; FLAYERS[a.cat]=A.catalog({name:'Area search: '+c[1],color:c[2],sourceSize:12,shape:'square',selectionColor:'#ffffff'}); aladin.addCatalog(FLAYERS[a.cat]); }
    FLAYERS[a.cat].addSources([A.source(a.ra,a.dec,{id:a.key})]); }); }
 function showFinkSummary(){ const n=$('conenote'); if(!FCONE){ n.style.display='none'; return; } const cnt={}; FINKRES.forEach(a=>{ if(visible.has(a.cat)) cnt[a.cat]=(cnt[a.cat]||0)+1; });
  const parts=Object.keys(cnt).map(k=>cnt[k].toLocaleString()+' '+catInfo[k][1].toLowerCase()); n.style.display='block';
@@ -314,9 +319,15 @@ function nightSummary(){ const L=NIGHTS.filter(n=>SELN.has(n.night)); let shown=
  L.forEach(n=>{ shown+=n.n; fink+=(n.fink&&n.fink.fink_objects)||0; if(n.xm&&!n.xm.milliquas) miss.push(nightLabel(n.night)); });
  return shown.toLocaleString()+' alerts after quality cuts'+(fink?' (Fink recorded '+fink.toLocaleString()+' objects)':'')+
    (miss.length?'. Quasar catalogue (Milliquas) not used for '+miss.join(', ')+' while CDS is offline.':''); }
-function buildNightPicker(){ const s=$('nightsel'), L=NIGHTS.slice().reverse();
- s.innerHTML=L.map((n,i)=>'<option value="'+n.night+'">'+(i===0?'Latest night · ':'')+nightLabel(n.night)+' · '+n.n.toLocaleString()+'</option>').join('')+
-   (NIGHTS.length>1?'<option value="all">All '+NIGHTS.length+' nights · '+NIGHTS.reduce((t,n)=>t+n.n,0).toLocaleString()+'</option>':''); }
+function monthKey(n){ return String(n).slice(0,6); }
+function monthLabel(k){ const M=['January','February','March','April','May','June','July','August','September','October','November','December']; return M[+k.slice(4,6)-1]+' '+k.slice(0,4); }
+function fillNights(mk,pick){ const s=$('nightsel'), latest=NIGHTS[NIGHTS.length-1].night, L=NIGHTS.filter(n=>monthKey(n.night)===mk).slice().reverse();
+ s.innerHTML=L.map(n=>'<option value="'+n.night+'">'+(n.night===latest?'Latest · ':'')+nightLabel(n.night)+' · '+n.n.toLocaleString()+' alerts</option>').join('');
+ s.value=pick||(L[0]&&L[0].night); }
+function buildNightPicker(){ const ms=$('monthsel'), keys=[...new Set(NIGHTS.map(n=>monthKey(n.night)))].reverse();
+ ms.innerHTML=keys.map(k=>{ const c=NIGHTS.filter(n=>monthKey(n.night)===k).length; return '<option value="'+k+'">'+monthLabel(k)+' · '+c+' night'+(c>1?'s':'')+'</option>'; }).join('');
+ ms.value=keys[0]; fillNights(keys[0]);
+ ms.onchange=()=>{ fillNights(ms.value); selectNights($('nightsel').value); }; }
 function selectNights(v){ stopPlay(); SELN=new Set(v==='all'?NIGHTS.map(n=>n.night):[v]);
  MANIFEST={}; NIGHTS.forEach(n=>{ if(!SELN.has(n.night)) return; Object.keys(n.counts).forEach(k=>{ if(!MANIFEST[k]) MANIFEST[k]={n:0}; MANIFEST[k].n+=n.counts[k]; }); });
  TIME.visits=[]; NIGHTS.forEach(n=>{ if(SELN.has(n.night)&&n.visits) n.visits.forEach(t=>TIME.visits.push([t,n.night])); }); TIME.visits.sort((x,y)=>x[0]-y[0]);
@@ -333,7 +344,7 @@ const MAXPER=4000;
 function sepDeg(ra1,de1,ra2,de2){ const r=Math.PI/180; const c=Math.sin(de1*r)*Math.sin(de2*r)+Math.cos(de1*r)*Math.cos(de2*r)*Math.cos((ra1-ra2)*r); return Math.acos(Math.max(-1,Math.min(1,c)))/r; }
 function makeLayer(k){
  if(!aladin||layers[k]) return; const c=catInfo[k];
- const cat=A.catalog({name:c[1],color:c[2],sourceSize:k==='star'?6:9,shape:'circle'}); aladin.addCatalog(cat); layers[k]=cat; cullAll();
+ const cat=A.catalog({name:c[1],color:c[2],sourceSize:k==='star'?6:9,shape:'circle',selectionColor:'#ffffff'}); aladin.addCatalog(cat); layers[k]=cat; cullAll();
 }
 let cullT=null; function scheduleCull(){ clearTimeout(cullT); cullT=setTimeout(cullAll,180); }
 function cullAll(){
@@ -770,7 +781,7 @@ function openSSO(a,fly){
  if(fly&&aladin){ aladin.gotoRaDec(a.ra,a.dec); aladin.setFoV(0.5); }
  loadCommunity(a);
 }
-function closeCard(){ clearPath(); $('card').style.display='none'; sel=null; document.querySelectorAll('.item.sel').forEach(e=>e.classList.remove('sel')); }
+function closeCard(){ clearPath(); try{ if(aladin&&aladin.view) aladin.view.unselectObjects(); }catch(e){} $('card').style.display='none'; sel=null; document.querySelectorAll('.item.sel').forEach(e=>e.classList.remove('sel')); }
 $('close').onclick=closeCard;
 $('cdswarn').onclick=()=>{ const n=$('cdsnote'); n.style.display=(n.style.display==='block')?'none':'block'; }; $('cdsx').onclick=()=>{ $('cdsnote').style.display='none'; };
 $('infobtn').onclick=()=>$('infomodal').classList.add('on'); $('infoclose').onclick=()=>$('infomodal').classList.remove('on');
@@ -883,7 +894,7 @@ Promise.all([aladinLoaded().then(()=>A.init),mirrorP]).then(()=>{
  let satOv=null, satLab=null;
  $('satbox').onchange=()=>{ const on=$('satbox').checked;
   if(on&&!satOv){ satOv=A.graphicOverlay({name:'Satellite tracks',color:'#ff922b',lineWidth:2}); aladin.addOverlay(satOv);
-    satLab=A.catalog({name:'Satellite labels',color:'#ff922b',sourceSize:10,shape:'cross'}); aladin.addCatalog(satLab);
+    satLab=A.catalog({name:'Satellite labels',color:'#ff922b',sourceSize:10,shape:'cross',selectionColor:'#ffffff'}); aladin.addCatalog(satLab);
     SATS.forEach(s=>{ try{ satOv.add(A.polyline(s[6])); }catch(e){}
       const m=s[6][Math.floor(s[6].length/2)];
       satLab.addSources([A.marker(m[0],m[1],{popupTitle:`🛰 ${s[1]}`,popupDesc:`NORAD ${s[0]} · ${s[2]}<br>Crossed this field at ${s[3]} UTC, 14 July 2026<br>Distance ≈ ${Number(s[4]).toLocaleString()} km`})]); }); }

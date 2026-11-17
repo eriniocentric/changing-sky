@@ -80,7 +80,7 @@ function finkObj(r){ const c=finkClassify(r); if(!c) return null; const id=Strin
   xm:(c[2]?c[2]+' · ':'')+'type from Fink cross-matches',age:null,src:'Fink area search (all dates)',ss:null};
  const f0=+r['f:firstDiaSourceMjdTaiFink']; if(f0) a.age=Math.max(0,Math.floor(m-f0)); a.night=fnight(m); a.key=id+'@fink'; a.fink=true; return a; }
 function drawFink(){ if(!aladin) return; Object.keys(FLAYERS).forEach(k=>FLAYERS[k].removeAll());
- FINKRES.forEach(a=>{ if(!visible.has(a.cat)) return; if(!FLAYERS[a.cat]){ const c=catInfo[a.cat]; FLAYERS[a.cat]=A.catalog({name:'Area search: '+c[1],color:c[2],sourceSize:12,shape:'square'}); aladin.addCatalog(FLAYERS[a.cat]); }
+ FINKRES.forEach(a=>{ if(!visible.has(a.cat)) return; if(!FLAYERS[a.cat]){ const c=catInfo[a.cat]; FLAYERS[a.cat]=A.catalog({name:'Area search: '+c[1],color:c[2],sourceSize:12,shape:'square',selectionColor:'#ffffff'}); aladin.addCatalog(FLAYERS[a.cat]); }
    FLAYERS[a.cat].addSources([A.source(a.ra,a.dec,{id:a.key})]); }); }
 function showFinkSummary(){ const n=$('conenote'); if(!FCONE){ n.style.display='none'; return; } const cnt={}; FINKRES.forEach(a=>{ if(visible.has(a.cat)) cnt[a.cat]=(cnt[a.cat]||0)+1; });
  const parts=Object.keys(cnt).map(k=>cnt[k].toLocaleString()+' '+catInfo[k][1].toLowerCase()); n.style.display='block';
@@ -231,6 +231,26 @@ rep("{ const cb=$('conebtn'); if(cb) cb.style.display=(rad<=CONE_MAX)?'inline-bl
 rep("let L=ALERTS.filter(a=>visible.has(a.cat)&&timeOK(a)&&(!q||", "let L=ALERTS.concat(FCONE?FINKRES.filter(a=>!BYID.has(a.id)):[]).filter(a=>visible.has(a.cat)&&(a.fink||timeOK(a))&&(!q||")
 rep("$('conebtn').onclick=coneSearch; }", "$('conebtn').onclick=()=>{ FCONE=null; coneSearch(); };\n $('autocone').onchange=()=>{ if($('autocone').checked){ FCONE=null; cullAll(); } else clearFink(true); };\n $('q').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); const v=$('q').value; if(/^\\d{15,20}$/.test(v.trim())||parseCoords(v)||filtered().length===0){ $('q').value=''; renderList(); findAnywhere(v); } } }); }")
 rep('<label class="cat" style="cursor:pointer" title="When zoomed out,', '<label class="cat" style="cursor:pointer" title="When the view is under about 1.5 degrees across, ask Fink for every alert it has ever issued there (all dates since Oct 2025), not only the selected night. They are drawn as squares and added to the list."><input type="checkbox" id="autocone" checked> 🔎 Zoomed in: load every alert ever seen here</label>\n  <label class="cat" style="cursor:pointer" title="When zoomed out,')
+
+
+# ---------- 7. simpler right panel: month + night pickers, extra options folded away (added 2026-11-17) ----------
+rep('<div class="ph">Night</div><div id="nightrow"><select id="nightsel"></select>', '<div class="ph">Night</div><div id="nightrow"><select id="monthsel" title="Month"></select><select id="nightsel" title="Night"></select>')
+m = re.search(r'\n  <label class="cat" style="cursor:pointer"><input type="checkbox" id="timebox">.*?(?=\n  <div class="ph flash" id="cathead">)', s, re.S); assert m; OPTS = m.group(0); s = s.replace(OPTS, '', 1)
+m = re.search(r'\n  <div class="ph">🛰 Satellites</div>.*?(?=\n  <div class="ph">Find</div>)', s, re.S); assert m; SAT = m.group(0); s = s.replace(SAT, '', 1)
+SAT = SAT.replace('<div class="ph">🛰 Satellites</div>', '')
+rep('\n  <div class="ph">Find</div>', '\n  <details id="moreopts"><summary>⚙ More options</summary>' + OPTS + SAT + '\n  </details>\n  <div class="ph">Find</div>')
+rep('#nightrow select{width:100%;', '#right .tabs{display:none}\n#moreopts{margin:6px 0 2px}#moreopts summary{cursor:pointer;font-size:12px;color:#c8cfdd}#moreopts .cat{margin-left:2px}\n#nightrow{display:flex;flex-wrap:wrap;gap:4px}#nightrow #monthsel{flex:0 0 42%}#nightrow #nightsel{flex:1}#nightinfo{width:100%}\n#nightrow select{')
+m = re.search(r"function buildNightPicker\(\)\{.*?\.toLocaleString\(\)\+'</option>':''\); \}\n", s, re.S); assert m and m.group(0).count('function buildNightPicker')==1
+s = s.replace(m.group(0), r"""function monthKey(n){ return String(n).slice(0,6); }
+function monthLabel(k){ const M=['January','February','March','April','May','June','July','August','September','October','November','December']; return M[+k.slice(4,6)-1]+' '+k.slice(0,4); }
+function fillNights(mk,pick){ const s=$('nightsel'), latest=NIGHTS[NIGHTS.length-1].night, L=NIGHTS.filter(n=>monthKey(n.night)===mk).slice().reverse();
+ s.innerHTML=L.map(n=>'<option value="'+n.night+'">'+(n.night===latest?'Latest · ':'')+nightLabel(n.night)+' · '+n.n.toLocaleString()+' alerts</option>').join('');
+ s.value=pick||(L[0]&&L[0].night); }
+function buildNightPicker(){ const ms=$('monthsel'), keys=[...new Set(NIGHTS.map(n=>monthKey(n.night)))].reverse();
+ ms.innerHTML=keys.map(k=>{ const c=NIGHTS.filter(n=>monthKey(n.night)===k).length; return '<option value="'+k+'">'+monthLabel(k)+' · '+c+' night'+(c>1?'s':'')+'</option>'; }).join('');
+ ms.value=keys[0]; fillNights(keys[0]);
+ ms.onchange=()=>{ fillNights(ms.value); selectNights($('nightsel').value); }; }
+""", 1)
 
 open(dst, 'w', encoding='utf-8').write(s)
 print('wrote', dst, len(s))
