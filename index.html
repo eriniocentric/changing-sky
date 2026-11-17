@@ -194,6 +194,16 @@ const MAST_PS1='https://stpubdata.s3.us-east-1.amazonaws.com/mast/skybackgrounds
 const FIXED={
  'RUBIN/latest':'https://images.rubinobservatory.org/hips/oceancosmosm18/color_gri',
  'RUBIN/virgo':'https://images.rubinobservatory.org/hips/SVImages_v2/color_ugri'};
+/* Where each Rubin map has data (centre RA, Dec, field of view in deg; boxes from the published coverage maps).
+   Picking one of these maps flies there, unless the view is already inside one of its fields. */
+const FIELDS={
+ 'RUBIN/latest':[[150.2,2.2,4.5],[225.0,-39.2,7.5]],
+ 'RUBIN/virgo':[[186.3,7.0,7]]};
+function goToField(id){ const F=FIELDS[id]; if(!F||!aladin) return; let ra0=0,de0=0;
+ try{ [ra0,de0]=aladin.getRaDec(); }catch(e){}
+ if(F.some(f=>sepDeg(ra0,de0,f[0],f[1])<f[2]/2)) return;
+ const f=F.slice().sort((x,y)=>sepDeg(ra0,de0,x[0],x[1])-sepDeg(ra0,de0,y[0],y[1]))[0];
+ try{ aladin.gotoRaDec(f[0],f[1]); aladin.setFoV(f[2]); }catch(e){ console.warn(e); } }
 const MIRRORS={
  irsa:{name:'NASA/IPAC IRSA',
   'CDS/P/DSS2/color':[IRSA+'DSS2/color',IRSA+'DSS2/color/preview.jpg'],
@@ -229,6 +239,7 @@ function setBase(id){
  if(CDS_OK===false&&!MIRROR[id]&&!FIXED[id]) return;
  try{aladin.setBaseImageLayer(hipsOf(id));}catch(e){try{aladin.setImageSurvey(id);}catch(e2){console.warn(e2)}}
  document.querySelectorAll('.tile').forEach(x=>x.classList.toggle('on',x.dataset.id===id));
+ goToField(id);
 }
 function setOverlay(id,title,btn){
  if(CDS_OK===false&&!MIRROR[id]&&!FIXED[id]) return;
@@ -237,6 +248,7 @@ function setOverlay(id,title,btn){
   const op=parseFloat($('ovop').value); if(ovLayer&&ovLayer.setOpacity) ovLayer.setOpacity(op);
   document.querySelectorAll('.ov').forEach(b=>b.classList.remove('on')); btn.classList.add('on');
   $('ovbox').style.display='block'; $('ovname').innerHTML='<b>Overlay:</b> '+title;
+  goToField(id);
  }catch(e){console.warn('overlay failed',e)}
 }
 $('ovop').oninput=()=>{ if(ovLayer&&ovLayer.setOpacity) ovLayer.setOpacity(parseFloat($('ovop').value)); };
