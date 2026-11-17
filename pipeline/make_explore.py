@@ -1,5 +1,5 @@
 """Make explore.html (tiled, multi-night test viewer) from index.html by swapping the data layer.
-Every replacement must match exactly once. Usage: python make_explore.py <index.html> <explore.html>"""
+Every replacement must match exactly once. Usage: python make_explore.py <site_template.html> <out.html>"""
 import re, sys
 src, dst = sys.argv[1], sys.argv[2]
 s = open(src, encoding='utf-8').read()
@@ -170,5 +170,67 @@ rep('#cullnote{', '#nightrow select{width:100%;background:#141a28;color:#e6e9ef;
     '#cullnote{')
 rep('<div id="topbar"><button id="whole">Whole sky</button><button id="zoomsel">Zoom to selected</button></div>', '<div id="topbar"><button id="whole">Whole sky</button><button id="zoomsel">Zoom to selected</button><button id="conebtn" style="display:none" title="Ask Fink for every alert it has ever issued in this view, of the types you have selected. Nothing is stored here.">🔎 All alerts here (Fink, all dates)</button></div><div id="conenote"></div>')
 rep('<head>', '<head><meta name="robots" content="noindex">')
+
+# ---------- 6. automatic all-dates loading when zoomed in, and search anywhere (added 2026-11-17) ----------
+SEARCH = r"""
+/* ---------- zoomed in: load every alert ever seen here; search anywhere ---------- */
+let autoT=null, PENDOPEN=null, FROWS=new Map();
+function autoCone(ra0,de0,rad){ const ab=$('autocone'); if(!ab||!ab.checked||rad>CONE_MAX||!visible.size||coneBusy) return;
+ if(FCONE && sepDeg(ra0,de0,FCONE.ra,FCONE.dec)<FCONE.rad*0.35 && rad<=FCONE.rad*1.3) return;
+ clearTimeout(autoT); autoT=setTimeout(()=>coneSearch(),900); }
+async function fpost(ep,body){ const r=await fetch(F+'/'+ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({'output-format':'json'},body))});
+ if(!r.ok) throw new Error(ep+' HTTP '+r.status); const j=bigJSON(await r.text()); return Array.isArray(j)?j:[]; }
+function parseCoords(q){ const s=q.trim(); if(!/^[-+0-9.:\shmsd°'",]+$/i.test(s)) return null; const sex=/[:hms°'"]/.test(s);
+ const tk=s.replace(/[hmsd°'",:]/gi,' ').trim().split(/\s+/); if(tk.some(x=>!/^[-+]?\d+(\.\d+)?$/.test(x))) return null;
+ let ra,de;
+ if(tk.length===2&&!sex){ ra=+tk[0]; de=+tk[1]; }
+ else if(tk.length===6){ ra=15*(+tk[0]+tk[1]/60+tk[2]/3600); const sg=tk[3].startsWith('-')?-1:1; de=sg*(Math.abs(+tk[3])+tk[4]/60+tk[5]/3600); }
+ else if(tk.length===2&&sex){ ra=15*(+tk[0]); de=+tk[1]; }
+ else return null;
+ if(!(ra>=0&&ra<360&&de>=-90&&de<=90)) return null; return [ra,de]; }
+function snote(t){ const n=$('conenote'); n.style.display='block'; n.textContent=t; }
+async function findAnywhere(raw){ const q=raw.trim(); if(!q) return;
+ try{
+ const c=parseCoords(q); if(c){ return goSearch(c[0],c[1],null,'RA '+c[0].toFixed(5)+'°, Dec '+c[1].toFixed(5)+'°'); }
+ let id=null, ra=null, de=null, label=q, tns=null;
+ if(/^\d{15,20}$/.test(q)){ id=q; }
+ else if(/^(SN|AT|TDE)\s*\d{4}[a-z]{1,4}$/i.test(q)||/^\d{4}[a-z]{2,4}$/i.test(q)){
+   const core=q.replace(/^(SN|AT|TDE)\s*/i,''), pre=(q.match(/^(SN|AT|TDE)/i)||['SN'])[0].toUpperCase();
+   snote('Looking up '+pre+' '+core+' on the Transient Name Server (via Fink)…');
+   let js=[]; for(const p of [pre,'SN','AT','TDE']){ js=await fpost('resolver',{resolver:'tns',name_or_id:p+' '+core}); if(js.length) break; }
+   if(!js.length){ snote('No Transient Name Server object called '+core+'.'); return; }
+   const r=js[0]; ra=+r['f:ra']; de=+r['f:declination']; tns={name:r['f:fullname'],type:(r['f:type']&&r['f:type']!=='nan')?r['f:type']:null}; label=r['f:fullname']+(r['f:type']&&r['f:type']!=='nan'?' ('+r['f:type']+')':'');
+   const m=String(r['f:internalname']||'').match(/LSST-AP-DO-(\d+)/); if(m) id=m[1]; }
+ else { snote('Looking up “'+q+'” in SIMBAD (via Fink)…'); const js=await fpost('resolver',{resolver:'simbad',name_or_id:q});
+   if(!js.length||js[0].jradeg==null){ snote('“'+q+'” was not found as a Rubin ID, TNS name, coordinates or SIMBAD name.'); return; }
+   ra=+js[0].jradeg; de=+js[0].jdedeg; label=js[0].oname+(js[0].otype?' ('+js[0].otype+')':''); }
+ if(id&&!tns){ try{ const rv=await fpost('resolver',{resolver:'tns',name_or_id:id,reverse:true}); const best=rv.filter(x=>x['f:xm_tns_fullname']).sort((x,y)=>(y['f:xm_tns_type']?1:0)-(x['f:xm_tns_type']?1:0))[0];
+   if(best){ tns={name:best['f:xm_tns_fullname'],type:best['f:xm_tns_type']||null}; label=tns.name+(tns.type?' ('+tns.type+')':''); } }catch(e){} }
+ if(id&&ra==null){ snote('Looking up Rubin object '+id+'…'); const rows=await fpost('sources',{diaObjectId:id,columns:'r:ra,r:dec,r:midpointMjdTai'});
+   if(!rows.length){ snote('Fink has no Rubin object '+id+'.'); return; } rows.sort((x,y)=>x['r:midpointMjdTai']-y['r:midpointMjdTai']); ra=+rows[rows.length-1]['r:ra']; de=+rows[rows.length-1]['r:dec']; }
+ return goSearch(ra,de,id,label,tns);
+ }catch(e){ snote('Search failed ('+e.message+'). Try again.'); } }
+async function goSearch(ra,de,id,label,tns){ if(!aladin) return; PENDOPEN=id; clearTimeout(autoT); FCONE=null;
+ aladin.gotoRaDec(ra,de); aladin.setFoV(0.25); snote('Loading every alert around '+label+' from Fink…');
+ coneSearch.force=true; try{ await coneSearch(); } finally { coneSearch.force=false; }
+ if(id) await openPending(id,ra,de,tns); }
+async function openPending(id,ra,de,tns){ let a=FINKRES.find(x=>x.id===id)||BYID.get(id);
+ if(!a){ let r=FROWS.get(id); if(!r){ const rows=await fpost('conesearch',{ra:ra,dec:de,radius:5,n:100,columns:FCOLS}); r=rows.find(x=>String(x['r:diaObjectId'])===id); }
+   if(r){ a=finkObj(r,true); if(a){ BYKEY.set(a.key,a); } } }
+ PENDOPEN=null;
+ if(a&&tns){ a.name=a.name||tns.name; const ty=tns.type;
+   if(ty&&!/AGN|Varstar|CV/.test(ty)&&(a.cat==='unk'||a.cat==='at')){ a.cat='sn'; a.xm='TNS: '+tns.name+' · '+ty; } else if(a.cat==='unk'){ a.cat='at'; a.xm='TNS: '+tns.name+(ty?' · '+ty:''); } }
+ if(a) openAlert(a,false); else snote('Found the position, but Fink returned no alert for object '+id+' there.'); }
+"""
+rep("function mjdUTC(m){", SEARCH + "function mjdUTC(m){")
+rep("function finkObj(r){ const c=finkClassify(r); if(!c) return null;", "function finkObj(r,force){ const c=finkClassify(r)||(force?['unk',null,'below this site\\'s quality cuts']:null); if(!c) return null;")
+rep("if(!visible.size){ $('conenote').style.display='block';", "if(!visible.size&&!coneSearch.force){ $('conenote').style.display='block';")
+rep("clearFink(false); const seen=new Set();\n   rows.forEach(x=>{ const a=finkObj(x);", "clearFink(false); const seen=new Set(); FROWS=new Map();\n   rows.forEach(x=>{ FROWS.set(String(x['r:diaObjectId']),x); const a=finkObj(x);")
+rep("FCONE={ra:ra0,dec:de0,rad:rad,n:rows.length}; drawFink(); showFinkSummary();", "FCONE={ra:ra0,dec:de0,rad:rad,n:rows.length}; drawFink(); showFinkSummary(); renderListSoon();")
+rep("{ const cb=$('conebtn'); if(cb) cb.style.display=(rad<=CONE_MAX)?'inline-block':'none'; }", "{ const cb=$('conebtn'); if(cb) cb.style.display=(rad<=CONE_MAX)?'inline-block':'none'; } autoCone(ra0,de0,rad);")
+rep("let L=ALERTS.filter(a=>visible.has(a.cat)&&timeOK(a)&&(!q||", "let L=ALERTS.concat(FCONE?FINKRES.filter(a=>!BYID.has(a.id)):[]).filter(a=>visible.has(a.cat)&&(a.fink||timeOK(a))&&(!q||")
+rep("$('conebtn').onclick=coneSearch; }", "$('conebtn').onclick=()=>{ FCONE=null; coneSearch(); };\n $('autocone').onchange=()=>{ if($('autocone').checked){ FCONE=null; cullAll(); } else clearFink(true); };\n $('q').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); const v=$('q').value; if(/^\\d{15,20}$/.test(v.trim())||parseCoords(v)||filtered().length===0){ $('q').value=''; renderList(); findAnywhere(v); } } }); }")
+rep('<label class="cat" style="cursor:pointer" title="When zoomed out,', '<label class="cat" style="cursor:pointer" title="When the view is under about 1.5 degrees across, ask Fink for every alert it has ever issued there (all dates since Oct 2025), not only the selected night. They are drawn as squares and added to the list."><input type="checkbox" id="autocone" checked> 🔎 Zoomed in: load every alert ever seen here</label>\n  <label class="cat" style="cursor:pointer" title="When zoomed out,')
+
 open(dst, 'w', encoding='utf-8').write(s)
 print('wrote', dst, len(s))
