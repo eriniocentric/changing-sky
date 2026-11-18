@@ -329,5 +329,22 @@ rep("aladin.on('objectClicked',o=>{ if(o&&o.data&&o.data.id){", "aladin.on('obje
 rep('<button id="conebtn"', '<button id="odnext" style="display:none" title="Fly to the next area where Rubin observed on this night">▶ Next busy area</button><button id="conebtn"')
 rep("$('autocone').onchange=", "$('odnext').onclick=()=>odGo(ODI+1);\n $('autocone').onchange=")
 
+
+# ---------- 10. clicks/defaults: auto-select types for past nights, note when no types, discard stale searches (added 2026-11-18) ----------
+rep("let ODSEED=null, ODLAYER=null, ODI=0;", "let ODSEED=null, ODLAYER=null, ODI=0, CGEN=0;\nconst OD_DEFAULT=['sn','at','agn','var','unk'];\nfunction odDefaults(){ if(visible.size) return false; let n=0; document.querySelectorAll('#cats .cat').forEach(d=>{ if(OD_DEFAULT.includes(d.dataset.k)&&d.onclick){ d.onclick(); n++; } }); return n>0; }")
+rep("function odStart(od){ ODSEED=null; odDraw(); const b=$('odnext'); if(b) b.style.display='none'; if(!od) return;",
+    "function odStart(od){ ODSEED=null; odDraw(); const b=$('odnext'); if(b) b.style.display='none'; if(!od) return; odDefaults();")
+rep("function autoCone(ra0,de0,rad){ const ab=$('autocone');",
+    "function autoCone(ra0,de0,rad){ if(rad<=CONE_MAX&&!visible.size&&(ODN||($('autocone')&&$('autocone').checked))){ snote('Pick one or more alert types in the right panel to load the alerts here.'); return; } const ab=$('autocone');")
+rep("function clearFink(hide){", "function clearFink(hide){ if(hide) CGEN++;")
+rep("const rad=Math.min(CONE_MAX,fov*0.75), b=$('conebtn'), od=ODN; coneBusy=true;", "const rad=Math.min(CONE_MAX,fov*0.75), b=$('conebtn'), od=ODN, gen=CGEN; let stale=false; coneBusy=true;")
+rep("   if(od&&ODN!==od) return;\n   clearFink(false);", "   if(gen!==CGEN||ODN!==od){ stale=true; return; }\n   clearFink(false);")
+rep("for(let k=0;k<multi.length;k+=300){ if(ODN!==od) return;", "for(let k=0;k<multi.length;k+=300){ if(ODN!==od||gen!==CGEN){ stale=true; return; }")
+rep("finally{ coneBusy=false; b.disabled=false; b.textContent='🔎 All alerts here (Fink, all dates)'; } }", "finally{ coneBusy=false; b.disabled=false; b.textContent='🔎 All alerts here (Fink, all dates)'; if(stale){ FCONE=null; setTimeout(cullAll,50); } } }")
+
+
+rep("const N=ODSEED.cells.length; ODI=((k%N)+N)%N; const c=ODSEED.cells[ODI];\n FCONE=null;", "const N=ODSEED.cells.length; ODI=((k%N)+N)%N; const c=ODSEED.cells[ODI];\n CGEN++; FCONE=null;")
+rep("async function goSearch(ra,de,id,label,tns){ if(!aladin) return; PENDOPEN=id; clearTimeout(autoT); FCONE=null;", "async function goSearch(ra,de,id,label,tns){ if(!aladin) return; PENDOPEN=id; clearTimeout(autoT); CGEN++; FCONE=null; for(let k=0;k<40&&coneBusy;k++) await new Promise(z=>setTimeout(z,250));")
+
 open(dst, 'w', encoding='utf-8').write(s)
 print('wrote', dst, len(s))

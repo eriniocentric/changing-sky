@@ -240,31 +240,31 @@ function showFinkSummary(){ const n=$('conenote'); if(!FCONE){ n.style.display='
  const parts=Object.keys(cnt).map(k=>cnt[k].toLocaleString()+' '+catInfo[k][1].toLowerCase()); n.style.display='block';
  n.innerHTML='<b>'+(ODN?'Alerts of '+nightLabel(ODN.night):'Area search')+'</b> (Fink, '+(ODN?'that night only':'every date since Oct 2025')+', within '+(FCONE.rad*60).toFixed(0)+'′): '+FCONE.n.toLocaleString()+' objects; of the selected types '+(parts.length?parts.join(', '):'none')+' — shown as squares. Types use Fink\'s own cross-matches, so they are rougher than the nightly ones. <a href="#" id="coneclear">Clear</a>';
  $('coneclear').onclick=e=>{ e.preventDefault(); clearFink(true); }; }
-function clearFink(hide){ FINKRES.forEach(a=>BYKEY.delete(a.key)); FINKRES=[]; Object.keys(FLAYERS).forEach(k=>FLAYERS[k].removeAll()); if(hide){ FCONE=null; $('conenote').style.display='none'; } }
+function clearFink(hide){ if(hide) CGEN++; FINKRES.forEach(a=>BYKEY.delete(a.key)); FINKRES=[]; Object.keys(FLAYERS).forEach(k=>FLAYERS[k].removeAll()); if(hide){ FCONE=null; $('conenote').style.display='none'; } }
 async function coneSearch(){ if(coneBusy||!aladin) return; let ra0,de0,fov; try{ [ra0,de0]=aladin.getRaDec(); fov=Math.max.apply(null,aladin.getFov()); }catch(e){ return; }
  if(!visible.size&&!coneSearch.force){ $('conenote').style.display='block'; $('conenote').textContent='Choose one or more alert types first; the search returns those types.'; return; }
- const rad=Math.min(CONE_MAX,fov*0.75), b=$('conebtn'), od=ODN; coneBusy=true; b.disabled=true; b.textContent='🔎 Searching Fink…';
+ const rad=Math.min(CONE_MAX,fov*0.75), b=$('conebtn'), od=ODN, gen=CGEN; let stale=false; coneBusy=true; b.disabled=true; b.textContent='🔎 Searching Fink…';
  try{ const body={ra:ra0,dec:de0,radius:Math.round(rad*3600),n:100,columns:FCOLS};
    if(od){ Object.assign(body,{startdate:od.S,stopdate:od.E,kind:'across'}); snote('Loading the alerts of '+nightLabel(od.night)+' in view from Fink…'); }
    const rows=await fpost('conesearch',body); let use=rows;
    if(od){ const byId=new Map(rows.map(x=>[String(x['r:diaObjectId']),x])), multi=[];
      use=[]; rows.forEach(x=>{ if(Math.abs((+x['r:midpointMjdTai'])-(+x['f:firstDiaSourceMjdTaiFink']))>1e-6) multi.push(String(x['r:diaObjectId'])); else if(+x['r:midpointMjdTai']>=od.m0&&+x['r:midpointMjdTai']<=od.m1) use.push(x); });
-     for(let k=0;k<multi.length;k+=300){ if(ODN!==od) return; snote('Loading the alerts of '+nightLabel(od.night)+' in view: light curves '+Math.min(k+300,multi.length)+' of '+multi.length+'…');
+     for(let k=0;k<multi.length;k+=300){ if(ODN!==od||gen!==CGEN){ stale=true; return; } snote('Loading the alerts of '+nightLabel(od.night)+' in view: light curves '+Math.min(k+300,multi.length)+' of '+multi.length+'…');
        const src=await fpost('sources',{diaObjectId:multi.slice(k,k+300).join(','),columns:SCOLS}); const best=new Map();
        src.forEach(d=>{ const t=+d['r:midpointMjdTai']; if(t<od.m0||t>od.m1) return; const id=String(d['r:diaObjectId']), q=(d['r:isDipole']||d['r:pixelFlags_saturatedCenter'])?-1:(+d['r:snr']||0), o=best.get(id);
          if(!o||q>o.q) best.set(id,{q:q,d:d}); });
        best.forEach((v,id)=>{ const x=Object.assign({},byId.get(id)||{},v.d); use.push(x); }); } }
-   if(od&&ODN!==od) return;
+   if(gen!==CGEN||ODN!==od){ stale=true; return; }
    clearFink(false); const seen=new Set(); FROWS=new Map();
    use.forEach(x=>{ FROWS.set(String(x['r:diaObjectId']),x); const a=finkObj(x); if(!a||seen.has(a.id)) return; seen.add(a.id); if(od) a.src='Fink, alerts of '+nightLabel(od.night)+' (loaded on demand)';
      const own=BYID.get(a.id); if(own&&!own.fink&&!od){ a.cat=own.cat; a.name=own.name||a.name; a.xm=own.xm; } FINKRES.push(a); BYKEY.set(a.key,a); });
    FCONE={ra:ra0,dec:de0,rad:rad,n:use.length}; drawFink(); showFinkSummary(); renderListSoon(); if(od) odCounts();
  }catch(e){ $('conenote').style.display='block'; $('conenote').textContent='The Fink search did not work ('+e.message+'). Try again, or a smaller area.'; }
- finally{ coneBusy=false; b.disabled=false; b.textContent='🔎 All alerts here (Fink, all dates)'; } }
+ finally{ coneBusy=false; b.disabled=false; b.textContent='🔎 All alerts here (Fink, all dates)'; if(stale){ FCONE=null; setTimeout(cullAll,50); } } }
 
 /* ---------- zoomed in: load every alert ever seen here; search anywhere ---------- */
 let autoT=null, PENDOPEN=null, FROWS=new Map();
-function autoCone(ra0,de0,rad){ const ab=$('autocone'); if(((!ab||!ab.checked)&&!ODN)||rad>CONE_MAX||!visible.size||coneBusy) return;
+function autoCone(ra0,de0,rad){ if(rad<=CONE_MAX&&!visible.size&&(ODN||($('autocone')&&$('autocone').checked))){ snote('Pick one or more alert types in the right panel to load the alerts here.'); return; } const ab=$('autocone'); if(((!ab||!ab.checked)&&!ODN)||rad>CONE_MAX||!visible.size||coneBusy) return;
  if(FCONE && sepDeg(ra0,de0,FCONE.ra,FCONE.dec)<FCONE.rad*0.35 && rad<=FCONE.rad*1.3) return;
  clearTimeout(autoT); autoT=setTimeout(()=>coneSearch(),900); }
 async function fpost(ep,body){ let r=null; for(let k=0;k<3;k++){ r=await fetch(F+'/'+ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({'output-format':'json'},body))});
@@ -300,7 +300,7 @@ async function findAnywhere(raw){ const q=raw.trim(); if(!q) return;
    if(!rows.length){ snote('Fink has no Rubin object '+id+'.'); return; } rows.sort((x,y)=>x['r:midpointMjdTai']-y['r:midpointMjdTai']); ra=+rows[rows.length-1]['r:ra']; de=+rows[rows.length-1]['r:dec']; }
  return goSearch(ra,de,id,label,tns);
  }catch(e){ snote('Search failed ('+e.message+'). Try again.'); } }
-async function goSearch(ra,de,id,label,tns){ if(!aladin) return; PENDOPEN=id; clearTimeout(autoT); FCONE=null;
+async function goSearch(ra,de,id,label,tns){ if(!aladin) return; PENDOPEN=id; clearTimeout(autoT); CGEN++; FCONE=null; for(let k=0;k<40&&coneBusy;k++) await new Promise(z=>setTimeout(z,250));
  aladin.gotoRaDec(ra,de); aladin.setFoV(0.25); snote('Loading every alert around '+label+' from Fink…');
  coneSearch.force=true; try{ await coneSearch(); } finally { coneSearch.force=false; }
  if(id) await openPending(id,ra,de,tns); }
@@ -313,7 +313,9 @@ async function openPending(id,ra,de,tns){ let a=FINKRES.find(x=>x.id===id)||BYID
  if(a) openAlert(a,false); else snote('Found the position, but Fink returned no alert for object '+id+' there.'); }
 function odWin(night){ const s=String(night), d=Date.UTC(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8)), a=new Date(d-6*3600e3), b=new Date(d+14*3600e3), f=x=>x.toISOString().slice(0,19).replace('T',' ');
  return {night:s,S:f(a),E:f(b),m0:a.getTime()/864e5+40587,m1:b.getTime()/864e5+40587}; }
-let ODSEED=null, ODLAYER=null, ODI=0;
+let ODSEED=null, ODLAYER=null, ODI=0, CGEN=0;
+const OD_DEFAULT=['sn','at','agn','var','unk'];
+function odDefaults(){ if(visible.size) return false; let n=0; document.querySelectorAll('#cats .cat').forEach(d=>{ if(OD_DEFAULT.includes(d.dataset.k)&&d.onclick){ d.onclick(); n++; } }); return n>0; }
 async function odSeeds(od){ const pts=[];
  for(const tg of ['most_likely_sn','extragalactic_new_candidate','in_tns']){ try{ const r=await fpost('tags',{tag:tg,n:5000,startdate:od.S,stopdate:od.E,columns:'r:ra,r:dec'}); r.forEach(x=>{ if(x['r:ra']!=null) pts.push([+x['r:ra'],+x['r:dec']]); }); }catch(e){ console.warn('tag',tg,e); } if(ODN!==od) return null; }
  const cells=new Map(), d2r=Math.PI/180;
@@ -325,8 +327,8 @@ function odDraw(){ if(!aladin||!window.A) return; if(!ODLAYER){ ODLAYER=A.catalo
  ODLAYER.removeAll(); if(ODSEED) ODLAYER.addSources(ODSEED.cells.map((c,k)=>A.source(c.ra,c.dec,{odc:k}))); }
 function odShow(rad){ if(ODLAYER){ try{ if(ODN&&ODSEED&&rad>CONE_MAX) ODLAYER.show(); else ODLAYER.hide(); }catch(e){} } }
 function odGo(k){ if(!ODSEED||!ODSEED.cells.length||!aladin) return; const N=ODSEED.cells.length; ODI=((k%N)+N)%N; const c=ODSEED.cells[ODI];
- FCONE=null; aladin.gotoRaDec(c.ra,c.dec); aladin.setFoV(1.0); const b=$('odnext'); b.style.display='inline-block'; b.textContent='▶ Next busy area ('+(ODI+1)+' of '+N+')'; }
-function odStart(od){ ODSEED=null; odDraw(); const b=$('odnext'); if(b) b.style.display='none'; if(!od) return;
+ CGEN++; FCONE=null; aladin.gotoRaDec(c.ra,c.dec); aladin.setFoV(1.0); const b=$('odnext'); b.style.display='inline-block'; b.textContent='▶ Next busy area ('+(ODI+1)+' of '+N+')'; }
+function odStart(od){ ODSEED=null; odDraw(); const b=$('odnext'); if(b) b.style.display='none'; if(!od) return; odDefaults();
  snote('Finding where Rubin looked on '+nightLabel(od.night)+'…');
  odSeeds(od).then(s=>{ if(ODN!==od||!s) return; ODSEED=s; odDraw();
    if(!s.cells.length){ snote('Fink lists no tagged alerts for '+nightLabel(od.night)+', so its footprint is unknown here. Zoom in anywhere to try.'); return; }
