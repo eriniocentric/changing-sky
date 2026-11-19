@@ -346,5 +346,52 @@ rep("finally{ coneBusy=false; b.disabled=false; b.textContent='🔎 All alerts h
 rep("const N=ODSEED.cells.length; ODI=((k%N)+N)%N; const c=ODSEED.cells[ODI];\n FCONE=null;", "const N=ODSEED.cells.length; ODI=((k%N)+N)%N; const c=ODSEED.cells[ODI];\n CGEN++; FCONE=null;")
 rep("async function goSearch(ra,de,id,label,tns){ if(!aladin) return; PENDOPEN=id; clearTimeout(autoT); FCONE=null;", "async function goSearch(ra,de,id,label,tns){ if(!aladin) return; PENDOPEN=id; clearTimeout(autoT); CGEN++; FCONE=null; for(let k=0;k<40&&coneBusy;k++) await new Promise(z=>setTimeout(z,250));")
 
+
+# ---------- 12. faster past nights: progressive drawing, parallel history batches, skip hidden types, smaller first view (added 2026-11-18) ----------
+m = re.search(r"   if\(od\)\{ const byId=new Map.*?best\.forEach\(\(v,id\)=>\{ const x=Object\.assign\(\{\},byId\.get\(id\)\|\|\{\},v\.d\); use\.push\(x\); \}\); \} \}\n", s, re.S); assert m
+s = s.replace(m.group(0), r"""   if(od){ const byId=new Map(rows.map(x=>[String(x['r:diaObjectId']),x])), multi=[]; let skipped=0;
+     use=[]; rows.forEach(x=>{ if(Math.abs((+x['r:midpointMjdTai'])-(+x['f:firstDiaSourceMjdTaiFink']))>1e-6){ if(odWanted(x)) multi.push(String(x['r:diaObjectId'])); else skipped++; } else if(+x['r:midpointMjdTai']>=od.m0&&+x['r:midpointMjdTai']<=od.m1) use.push(x); });
+     if(gen!==CGEN||ODN!==od){ stale=true; return; }
+     clearFink(false); FROWS=new Map(); const seen=new Set();
+     const add=list=>list.forEach(x=>{ FROWS.set(String(x['r:diaObjectId']),x); const a=finkObj(x); if(!a||seen.has(a.id)) return; seen.add(a.id); a.src='Fink, alerts of '+nightLabel(od.night)+' (loaded on demand)'; FINKRES.push(a); BYKEY.set(a.key,a); });
+     add(use); FCONE={ra:ra0,dec:de0,rad:rad,n:use.length}; drawFink(); showFinkSummary(); renderListSoon(); odCounts();
+     const chunks=[]; for(let k=0;k<multi.length;k+=100) chunks.push(multi.slice(k,k+100)); let done=0;
+     const prog=()=>{ if(done<multi.length){ const n=$('conenote'); n.style.display='block'; n.innerHTML+='<br><span class=\"sub\">Still checking '+(multi.length-done).toLocaleString()+' objects seen on several nights…</span>'; } };
+     prog();
+     const worker=async()=>{ while(chunks.length){ if(ODN!==od||gen!==CGEN){ stale=true; return; } const c=chunks.shift(); let src=[];
+         try{ src=await fpost('sources',{diaObjectId:c.join(','),columns:SCOLS}); }catch(e){ console.warn('sources',e); }
+         if(ODN!==od||gen!==CGEN){ stale=true; return; } const best=new Map();
+         src.forEach(d=>{ const t=+d['r:midpointMjdTai']; if(t<od.m0||t>od.m1) return; const id=String(d['r:diaObjectId']), q=(d['r:isDipole']||d['r:pixelFlags_saturatedCenter'])?-1:(+d['r:snr']||0), o=best.get(id); if(!o||q>o.q) best.set(id,{q:q,d:d}); });
+         const got=[]; best.forEach((v,id)=>got.push(Object.assign({},byId.get(id)||{},v.d))); add(got); done+=c.length; FCONE.n+=got.length;
+         drawFink(); showFinkSummary(); renderListSoon(); odCounts(); prog(); } };
+     await Promise.all([worker(),worker(),worker()]);
+     if(!stale&&skipped){ const n=$('conenote'); n.innerHTML+='<br><span class=\"sub\">'+skipped.toLocaleString()+' repeating objects of hidden types were not checked; switch their type on to load them.</span>'; }
+     return; }
+""", 1)
+rep("function odCounts(){", r"""function odType(x){ const vsx=fclean(x['f:xm_vsx_Type']), tns=fclean(x['f:xm_tns_fullname']), tt=fclean(x['f:xm_tns_type']), bl=fclean(x['f:xm_x4lac_type'])||fclean(x['f:xm_x3hsp_type']), led=fclean(x['f:xm_mangrove_HyperLEDA_name']), ps=+x['f:xm_legacydr8_pstar'];
+ if(tt&&tt!=='AGN'&&tt!=='Varstar'&&tt!=='CV') return 'sn'; if(tt==='AGN'||bl||vsx==='AGN'||vsx==='BLLAC'||vsx==='CV|QSO') return 'agn'; if(vsx||tt==='Varstar'||tt==='CV') return 'var'; if(tns) return 'at'; if(ps>0.5) return 'star'; if(led) return 'gal'; return 'unk'; }
+function odWanted(x){ const t=odType(x); return visible.has(t)||(t==='unk'&&visible.has('glint')); }
+function odCounts(){""")
+m = re.search(r"async function odSeeds\(od\)\{.*?return \{n:pts\.length,cells:L\}; \}\n", s, re.S); assert m
+s = s.replace(m.group(0), r"""async function odSeeds(od,onFirst){ const pts=[], d2r=Math.PI/180, fin=new Set(); let first=true;
+ const cellsOf=()=>{ const cells=new Map(); pts.forEach(([ra,de])=>{ const k=Math.round(de/1.5)+'_'+Math.round(ra*Math.cos(de*d2r)/1.5); let c=cells.get(k); if(!c){ c={n:0,x:0,y:0,z:0}; cells.set(k,c); }
+     c.n++; c.x+=Math.cos(de*d2r)*Math.cos(ra*d2r); c.y+=Math.cos(de*d2r)*Math.sin(ra*d2r); c.z+=Math.sin(de*d2r); });
+   return [...cells.values()].map(c=>{ const r=Math.hypot(c.x,c.y,c.z); return {ra:(Math.atan2(c.y,c.x)/d2r+360)%360, dec:Math.asin(c.z/r)/d2r, n:c.n}; }).sort((a,b)=>b.n-a.n); };
+ await Promise.all(['most_likely_sn','extragalactic_new_candidate','in_tns'].map(async tg=>{ try{ const r=await fpost('tags',{tag:tg,n:5000,startdate:od.S,stopdate:od.E,columns:'r:ra,r:dec'}); if(ODN!==od) return;
+     r.forEach(x=>{ if(x['r:ra']!=null) pts.push([+x['r:ra'],+x['r:dec']]); }); }catch(e){ console.warn('tag',tg,e); } fin.add(tg);
+     if(first&&onFirst&&ODN===od&&pts.length>=20&&(fin.size===3||(fin.has('extragalactic_new_candidate')&&fin.has('in_tns')))){ first=false; onFirst({n:pts.length,cells:cellsOf()}); } }));
+ if(ODN!==od) return null; return {n:pts.length,cells:cellsOf()}; }
+""", 1)
+rep("aladin.gotoRaDec(c.ra,c.dec); aladin.setFoV(1.0);", "aladin.gotoRaDec(c.ra,c.dec); aladin.setFoV(0.6);")
+m = re.search(r" odSeeds\(od\)\.then\(s=>\{ if\(ODN!==od\|\|!s\) return; ODSEED=s; odDraw\(\);.*?odGo\(0\); \}\); \}\n", s, re.S); assert m
+s = s.replace(m.group(0), r""" let flown=false;
+ odSeeds(od, s=>{ if(ODN!==od) return; ODSEED=s; odDraw(); flown=true; snote('Flying to the busiest area of '+nightLabel(od.night)+'…'); odGo(0); })
+ .then(s=>{ if(ODN!==od||!s) return; ODSEED=s; odDraw();
+   if(!s.cells.length){ snote('Fink lists no tagged alerts for '+nightLabel(od.night)+', so its footprint is unknown here. Zoom in anywhere to try.'); return; }
+   if(!flown) odGo(0); else { const b=$('odnext'); b.textContent='▶ Next busy area ('+(ODI+1)+' of '+s.cells.length+')'; } }); }
+""", 1)
+rep("ensureCat(k).then(()=>{ d.classList.remove('loading'); if(!visible.has(k)) return; if(layers[k]) layers[k].show(); else makeLayer(k); cullAll(); renderList(); }); return; }",
+    "if(ODN&&FCONE){ CGEN++; FCONE=null; } ensureCat(k).then(()=>{ d.classList.remove('loading'); if(!visible.has(k)) return; if(layers[k]) layers[k].show(); else makeLayer(k); cullAll(); renderList(); }); return; }")
+
 open(dst, 'w', encoding='utf-8').write(s)
 print('wrote', dst, len(s))

@@ -247,13 +247,24 @@ async function coneSearch(){ if(coneBusy||!aladin) return; let ra0,de0,fov; try{
  try{ const body={ra:ra0,dec:de0,radius:Math.round(rad*3600),n:100,columns:FCOLS};
    if(od){ Object.assign(body,{startdate:od.S,stopdate:od.E,kind:'across'}); snote('Loading the alerts of '+nightLabel(od.night)+' in view from Fink…'); }
    const rows=await fpost('conesearch',body); let use=rows;
-   if(od){ const byId=new Map(rows.map(x=>[String(x['r:diaObjectId']),x])), multi=[];
-     use=[]; rows.forEach(x=>{ if(Math.abs((+x['r:midpointMjdTai'])-(+x['f:firstDiaSourceMjdTaiFink']))>1e-6) multi.push(String(x['r:diaObjectId'])); else if(+x['r:midpointMjdTai']>=od.m0&&+x['r:midpointMjdTai']<=od.m1) use.push(x); });
-     for(let k=0;k<multi.length;k+=300){ if(ODN!==od||gen!==CGEN){ stale=true; return; } snote('Loading the alerts of '+nightLabel(od.night)+' in view: light curves '+Math.min(k+300,multi.length)+' of '+multi.length+'…');
-       const src=await fpost('sources',{diaObjectId:multi.slice(k,k+300).join(','),columns:SCOLS}); const best=new Map();
-       src.forEach(d=>{ const t=+d['r:midpointMjdTai']; if(t<od.m0||t>od.m1) return; const id=String(d['r:diaObjectId']), q=(d['r:isDipole']||d['r:pixelFlags_saturatedCenter'])?-1:(+d['r:snr']||0), o=best.get(id);
-         if(!o||q>o.q) best.set(id,{q:q,d:d}); });
-       best.forEach((v,id)=>{ const x=Object.assign({},byId.get(id)||{},v.d); use.push(x); }); } }
+   if(od){ const byId=new Map(rows.map(x=>[String(x['r:diaObjectId']),x])), multi=[]; let skipped=0;
+     use=[]; rows.forEach(x=>{ if(Math.abs((+x['r:midpointMjdTai'])-(+x['f:firstDiaSourceMjdTaiFink']))>1e-6){ if(odWanted(x)) multi.push(String(x['r:diaObjectId'])); else skipped++; } else if(+x['r:midpointMjdTai']>=od.m0&&+x['r:midpointMjdTai']<=od.m1) use.push(x); });
+     if(gen!==CGEN||ODN!==od){ stale=true; return; }
+     clearFink(false); FROWS=new Map(); const seen=new Set();
+     const add=list=>list.forEach(x=>{ FROWS.set(String(x['r:diaObjectId']),x); const a=finkObj(x); if(!a||seen.has(a.id)) return; seen.add(a.id); a.src='Fink, alerts of '+nightLabel(od.night)+' (loaded on demand)'; FINKRES.push(a); BYKEY.set(a.key,a); });
+     add(use); FCONE={ra:ra0,dec:de0,rad:rad,n:use.length}; drawFink(); showFinkSummary(); renderListSoon(); odCounts();
+     const chunks=[]; for(let k=0;k<multi.length;k+=100) chunks.push(multi.slice(k,k+100)); let done=0;
+     const prog=()=>{ if(done<multi.length){ const n=$('conenote'); n.style.display='block'; n.innerHTML+='<br><span class=\"sub\">Still checking '+(multi.length-done).toLocaleString()+' objects seen on several nights…</span>'; } };
+     prog();
+     const worker=async()=>{ while(chunks.length){ if(ODN!==od||gen!==CGEN){ stale=true; return; } const c=chunks.shift(); let src=[];
+         try{ src=await fpost('sources',{diaObjectId:c.join(','),columns:SCOLS}); }catch(e){ console.warn('sources',e); }
+         if(ODN!==od||gen!==CGEN){ stale=true; return; } const best=new Map();
+         src.forEach(d=>{ const t=+d['r:midpointMjdTai']; if(t<od.m0||t>od.m1) return; const id=String(d['r:diaObjectId']), q=(d['r:isDipole']||d['r:pixelFlags_saturatedCenter'])?-1:(+d['r:snr']||0), o=best.get(id); if(!o||q>o.q) best.set(id,{q:q,d:d}); });
+         const got=[]; best.forEach((v,id)=>got.push(Object.assign({},byId.get(id)||{},v.d))); add(got); done+=c.length; FCONE.n+=got.length;
+         drawFink(); showFinkSummary(); renderListSoon(); odCounts(); prog(); } };
+     await Promise.all([worker(),worker(),worker()]);
+     if(!stale&&skipped){ const n=$('conenote'); n.innerHTML+='<br><span class=\"sub\">'+skipped.toLocaleString()+' repeating objects of hidden types were not checked; switch their type on to load them.</span>'; }
+     return; }
    if(gen!==CGEN||ODN!==od){ stale=true; return; }
    clearFink(false); const seen=new Set(); FROWS=new Map();
    use.forEach(x=>{ FROWS.set(String(x['r:diaObjectId']),x); const a=finkObj(x); if(!a||seen.has(a.id)) return; seen.add(a.id); if(od) a.src='Fink, alerts of '+nightLabel(od.night)+' (loaded on demand)';
@@ -316,23 +327,29 @@ function odWin(night){ const s=String(night), d=Date.UTC(+s.slice(0,4),+s.slice(
 let ODSEED=null, ODLAYER=null, ODI=0, CGEN=0;
 const OD_DEFAULT=['sn','at','agn','var','unk'];
 function odDefaults(){ if(visible.size) return false; let n=0; document.querySelectorAll('#cats .cat').forEach(d=>{ if(OD_DEFAULT.includes(d.dataset.k)&&d.onclick){ d.onclick(); n++; } }); return n>0; }
-async function odSeeds(od){ const pts=[];
- for(const tg of ['most_likely_sn','extragalactic_new_candidate','in_tns']){ try{ const r=await fpost('tags',{tag:tg,n:5000,startdate:od.S,stopdate:od.E,columns:'r:ra,r:dec'}); r.forEach(x=>{ if(x['r:ra']!=null) pts.push([+x['r:ra'],+x['r:dec']]); }); }catch(e){ console.warn('tag',tg,e); } if(ODN!==od) return null; }
- const cells=new Map(), d2r=Math.PI/180;
- pts.forEach(([ra,de])=>{ const k=Math.round(de/1.5)+'_'+Math.round(ra*Math.cos(de*d2r)/1.5); let c=cells.get(k); if(!c){ c={n:0,x:0,y:0,z:0}; cells.set(k,c); }
-   c.n++; c.x+=Math.cos(de*d2r)*Math.cos(ra*d2r); c.y+=Math.cos(de*d2r)*Math.sin(ra*d2r); c.z+=Math.sin(de*d2r); });
- const L=[...cells.values()].map(c=>{ const r=Math.hypot(c.x,c.y,c.z); return {ra:(Math.atan2(c.y,c.x)/d2r+360)%360, dec:Math.asin(c.z/r)/d2r, n:c.n}; }).sort((a,b)=>b.n-a.n);
- return {n:pts.length,cells:L}; }
+async function odSeeds(od,onFirst){ const pts=[], d2r=Math.PI/180, fin=new Set(); let first=true;
+ const cellsOf=()=>{ const cells=new Map(); pts.forEach(([ra,de])=>{ const k=Math.round(de/1.5)+'_'+Math.round(ra*Math.cos(de*d2r)/1.5); let c=cells.get(k); if(!c){ c={n:0,x:0,y:0,z:0}; cells.set(k,c); }
+     c.n++; c.x+=Math.cos(de*d2r)*Math.cos(ra*d2r); c.y+=Math.cos(de*d2r)*Math.sin(ra*d2r); c.z+=Math.sin(de*d2r); });
+   return [...cells.values()].map(c=>{ const r=Math.hypot(c.x,c.y,c.z); return {ra:(Math.atan2(c.y,c.x)/d2r+360)%360, dec:Math.asin(c.z/r)/d2r, n:c.n}; }).sort((a,b)=>b.n-a.n); };
+ await Promise.all(['most_likely_sn','extragalactic_new_candidate','in_tns'].map(async tg=>{ try{ const r=await fpost('tags',{tag:tg,n:5000,startdate:od.S,stopdate:od.E,columns:'r:ra,r:dec'}); if(ODN!==od) return;
+     r.forEach(x=>{ if(x['r:ra']!=null) pts.push([+x['r:ra'],+x['r:dec']]); }); }catch(e){ console.warn('tag',tg,e); } fin.add(tg);
+     if(first&&onFirst&&ODN===od&&pts.length>=20&&(fin.size===3||(fin.has('extragalactic_new_candidate')&&fin.has('in_tns')))){ first=false; onFirst({n:pts.length,cells:cellsOf()}); } }));
+ if(ODN!==od) return null; return {n:pts.length,cells:cellsOf()}; }
 function odDraw(){ if(!aladin||!window.A) return; if(!ODLAYER){ ODLAYER=A.catalog({name:'Where Rubin looked that night',color:'#7f9bd6',sourceSize:9,shape:'circle',selectionColor:'#ffffff'}); aladin.addCatalog(ODLAYER); }
  ODLAYER.removeAll(); if(ODSEED) ODLAYER.addSources(ODSEED.cells.map((c,k)=>A.source(c.ra,c.dec,{odc:k}))); }
 function odShow(rad){ if(ODLAYER){ try{ if(ODN&&ODSEED&&rad>CONE_MAX) ODLAYER.show(); else ODLAYER.hide(); }catch(e){} } }
 function odGo(k){ if(!ODSEED||!ODSEED.cells.length||!aladin) return; const N=ODSEED.cells.length; ODI=((k%N)+N)%N; const c=ODSEED.cells[ODI];
- CGEN++; FCONE=null; aladin.gotoRaDec(c.ra,c.dec); aladin.setFoV(1.0); const b=$('odnext'); b.style.display='inline-block'; b.textContent='▶ Next busy area ('+(ODI+1)+' of '+N+')'; }
+ CGEN++; FCONE=null; aladin.gotoRaDec(c.ra,c.dec); aladin.setFoV(0.6); const b=$('odnext'); b.style.display='inline-block'; b.textContent='▶ Next busy area ('+(ODI+1)+' of '+N+')'; }
 function odStart(od){ ODSEED=null; odDraw(); const b=$('odnext'); if(b) b.style.display='none'; if(!od) return; odDefaults();
  snote('Finding where Rubin looked on '+nightLabel(od.night)+'…');
- odSeeds(od).then(s=>{ if(ODN!==od||!s) return; ODSEED=s; odDraw();
+ let flown=false;
+ odSeeds(od, s=>{ if(ODN!==od) return; ODSEED=s; odDraw(); flown=true; snote('Flying to the busiest area of '+nightLabel(od.night)+'…'); odGo(0); })
+ .then(s=>{ if(ODN!==od||!s) return; ODSEED=s; odDraw();
    if(!s.cells.length){ snote('Fink lists no tagged alerts for '+nightLabel(od.night)+', so its footprint is unknown here. Zoom in anywhere to try.'); return; }
-   snote(nightLabel(od.night)+': Rubin’s alerts fall in about '+s.cells.length+' sky areas (blue dots). Flying to the busiest; use ▶ Next busy area or click a blue dot.'); odGo(0); }); }
+   if(!flown) odGo(0); else { const b=$('odnext'); b.textContent='▶ Next busy area ('+(ODI+1)+' of '+s.cells.length+')'; } }); }
+function odType(x){ const vsx=fclean(x['f:xm_vsx_Type']), tns=fclean(x['f:xm_tns_fullname']), tt=fclean(x['f:xm_tns_type']), bl=fclean(x['f:xm_x4lac_type'])||fclean(x['f:xm_x3hsp_type']), led=fclean(x['f:xm_mangrove_HyperLEDA_name']), ps=+x['f:xm_legacydr8_pstar'];
+ if(tt&&tt!=='AGN'&&tt!=='Varstar'&&tt!=='CV') return 'sn'; if(tt==='AGN'||bl||vsx==='AGN'||vsx==='BLLAC'||vsx==='CV|QSO') return 'agn'; if(vsx||tt==='Varstar'||tt==='CV') return 'var'; if(tns) return 'at'; if(ps>0.5) return 'star'; if(led) return 'gal'; return 'unk'; }
+function odWanted(x){ const t=odType(x); return visible.has(t)||(t==='unk'&&visible.has('glint')); }
 function odCounts(){ const c={}; FINKRES.forEach(a=>c[a.cat]=(c[a.cat]||0)+1); document.querySelectorAll('#cats .cat').forEach(d=>{ const e=d.querySelector('.cnt'); if(e) e.textContent=(c[d.dataset.k]||0).toLocaleString(); }); }
 function selectNights(v){ const stored=NIGHTS.some(n=>n.night===v);
  if(stored){ ODN=null; clearFink(true); odStart(null); return selectStored(v); }
@@ -506,7 +523,7 @@ function buildCats(){
   d.onclick=()=>{ if(!touched){touched=true; $('cathead').classList.remove('flash'); $('cathead').classList.add('done'); $('cats').classList.remove('flash');}
                  if(visible.has(k)){visible.delete(k);d.classList.add('off');layers[k]&&layers[k].hide();}
                  else{visible.add(k);d.classList.remove('off'); if(!BYCAT[k]){ d.classList.add('loading'); $('nshow').textContent='Loading '+c1(k)+'…'; }
-                   ensureCat(k).then(()=>{ d.classList.remove('loading'); if(!visible.has(k)) return; if(layers[k]) layers[k].show(); else makeLayer(k); cullAll(); renderList(); }); return; } shown=300; renderList(); };
+                   if(ODN&&FCONE){ CGEN++; FCONE=null; } ensureCat(k).then(()=>{ d.classList.remove('loading'); if(!visible.has(k)) return; if(layers[k]) layers[k].show(); else makeLayer(k); cullAll(); renderList(); }); return; } shown=300; renderList(); };
   box.appendChild(d);});
 }
 function filtered(){
