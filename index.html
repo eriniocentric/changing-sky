@@ -351,13 +351,13 @@ function odStart(od){ ODSEED=null; odDraw(); const b=$('odnext'); if(b) b.style.
 function odType(x){ const vsx=fclean(x['f:xm_vsx_Type']), tns=fclean(x['f:xm_tns_fullname']), tt=fclean(x['f:xm_tns_type']), bl=fclean(x['f:xm_x4lac_type'])||fclean(x['f:xm_x3hsp_type']), led=fclean(x['f:xm_mangrove_HyperLEDA_name']), ps=+x['f:xm_legacydr8_pstar'];
  if(tt&&tt!=='AGN'&&tt!=='Varstar'&&tt!=='CV') return 'sn'; if(tt==='AGN'||bl||vsx==='AGN'||vsx==='BLLAC'||vsx==='CV|QSO') return 'agn'; if(vsx||tt==='Varstar'||tt==='CV') return 'var'; if(tns) return 'at'; if(ps>0.5) return 'star'; if(led) return 'gal'; return 'unk'; }
 function odWanted(x){ const t=odType(x); return visible.has(t)||(t==='unk'&&visible.has('glint')); }
-const ABAND={1:'g',2:'r',3:'i',4:'z',5:'y',6:'u'}; let RELAY_OK=null;
+const ABAND={1:'g',2:'r',3:'i',4:'z',5:'y',6:'u'}, RELAY_FN='clever-api'; let RELAY_OK=null;  /* Supabase function name of the ALeRCE TAP relay (code: supabase/functions/alerce-tap/index.ts) */
 function csvRows(t){ const L=String(t||'').split(/\r?\n/).filter(x=>x.trim()); if(!L.length) return []; const H=L[0].split(',');
  return L.slice(1).map(l=>{ const v=l.split(','), o={}; H.forEach((h,i)=>o[h]=v[i]); return o; }); }
 async function relayLoad(od,body,ra0,de0,rad,gen){ snote('Loading the alerts of '+nightLabel(od.night)+' in view (ALeRCE)…');
  const ctl=new AbortController(), tm=setTimeout(()=>ctl.abort(),25000); let rj=null;
  const finkP=fpost('conesearch',body).catch(()=>null);   // Fink cross-matches (TNS, VSX, Legacy star score...), merged when they arrive
- try{ const rr=await fetch(SB_URL+'/functions/v1/alerce-tap',{method:'POST',headers:{'Content-Type':'application/json',apikey:SB_KEY},body:JSON.stringify({ra:ra0,dec:de0,radius:rad,mjd_min:od.m0,mjd_max:od.m1}),signal:ctl.signal});
+ try{ const rr=await fetch(SB_URL+'/functions/v1/'+RELAY_FN,{method:'POST',headers:{'Content-Type':'application/json',apikey:SB_KEY},body:JSON.stringify({ra:ra0,dec:de0,radius:rad,mjd_min:od.m0,mjd_max:od.m1}),signal:ctl.signal});
    clearTimeout(tm); if(!rr.ok) throw new Error('relay HTTP '+rr.status); rj=await rr.json(); if(rj.error) throw new Error(rj.error);
  }catch(e){ clearTimeout(tm); console.warn('ALeRCE relay unavailable, falling back to Fink:',e); RELAY_OK=false; return 'fail'; }
  RELAY_OK=true; if(ODN!==od||gen!==CGEN) return 'stale';

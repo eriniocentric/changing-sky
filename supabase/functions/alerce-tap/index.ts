@@ -3,6 +3,8 @@
 // accepts ONLY a sky position, a radius (<= 1 deg) and a time range (<= 31 days), builds the ADQL
 // itself (no free-form queries), runs the detection and classification queries in parallel and
 // returns both as CSV text with CORS headers for the Changing Sky site.
+// Deployed 2026-11-19 in project lnfxxsxmkecwedheyvuq under the function name "clever-api" (Supabase fixes the name at first deploy);
+// the page uses RELAY_FN in pipeline/make_explore.py. To redeploy: same function, paste this file.
 // Deploy: Supabase dashboard -> Edge Functions -> new function "alerce-tap" -> paste this file ->
 // turn OFF "Verify JWT" (the site's publishable key is not a JWT) -> Deploy.
 const TAP = "https://tap.alerce.online/tap/sync";
