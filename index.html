@@ -238,7 +238,7 @@ function drawFink(){ if(!aladin) return; Object.keys(FLAYERS).forEach(k=>FLAYERS
    FLAYERS[a.cat].addSources([A.source(a.ra,a.dec,{id:a.key})]); }); }
 function showFinkSummary(){ const n=$('conenote'); if(!FCONE){ n.style.display='none'; return; } const cnt={}; FINKRES.forEach(a=>{ if(visible.has(a.cat)) cnt[a.cat]=(cnt[a.cat]||0)+1; });
  const parts=Object.keys(cnt).map(k=>cnt[k].toLocaleString()+' '+catInfo[k][1].toLowerCase()); n.style.display='block';
- n.innerHTML='<b>'+(ODN?'Alerts of '+nightLabel(ODN.night):'Area search')+'</b> (Fink, '+(ODN?'that night only':'every date since Oct 2025')+', within '+(FCONE.rad*60).toFixed(0)+'′): '+FCONE.n.toLocaleString()+' objects; of the selected types '+(parts.length?parts.join(', '):'none')+' — shown as squares. Types use Fink\'s own cross-matches, so they are rougher than the nightly ones. <a href="#" id="coneclear">Clear</a>';
+ n.innerHTML='<b>'+(ODN?'Alerts of '+nightLabel(ODN.night):'Area search')+'</b> ('+(ODN&&RELAY_OK?'ALeRCE via relay, cross-matches from Fink, ':'Fink, ')+(ODN?'that night only':'every date since Oct 2025')+', within '+(FCONE.rad*60).toFixed(0)+'′): '+FCONE.n.toLocaleString()+' objects; of the selected types '+(parts.length?parts.join(', '):'none')+' — shown as squares. Types use Fink\'s own cross-matches, so they are rougher than the nightly ones. <a href="#" id="coneclear">Clear</a>';
  $('coneclear').onclick=e=>{ e.preventDefault(); clearFink(true); }; }
 function clearFink(hide){ if(hide) CGEN++; FINKRES.forEach(a=>BYKEY.delete(a.key)); FINKRES=[]; Object.keys(FLAYERS).forEach(k=>FLAYERS[k].removeAll()); if(hide){ FCONE=null; $('conenote').style.display='none'; } }
 async function coneSearch(){ if(coneBusy||!aladin) return; let ra0,de0,fov; try{ [ra0,de0]=aladin.getRaDec(); fov=Math.max.apply(null,aladin.getFov()); }catch(e){ return; }
@@ -246,6 +246,7 @@ async function coneSearch(){ if(coneBusy||!aladin) return; let ra0,de0,fov; try{
  const rad=Math.min(CONE_MAX,fov*0.75), b=$('conebtn'), od=ODN, gen=CGEN; let stale=false; coneBusy=true; b.disabled=true; b.textContent='🔎 Searching Fink…';
  try{ const body={ra:ra0,dec:de0,radius:Math.round(rad*3600),n:100,columns:FCOLS};
    if(od){ Object.assign(body,{startdate:od.S,stopdate:od.E,kind:'across'}); snote('Loading the alerts of '+nightLabel(od.night)+' in view from Fink…'); }
+   if(od&&RELAY_OK!==false){ const res=await relayLoad(od,body,ra0,de0,rad,gen); if(res==='stale'){ stale=true; return; } if(res==='ok') return; }
    const rows=await fpost('conesearch',body); let use=rows;
    if(od){ const byId=new Map(rows.map(x=>[String(x['r:diaObjectId']),x])), multi=[]; let skipped=0;
      use=[]; rows.forEach(x=>{ if(Math.abs((+x['r:midpointMjdTai'])-(+x['f:firstDiaSourceMjdTaiFink']))>1e-6){ if(odWanted(x)) multi.push(String(x['r:diaObjectId'])); else skipped++; } else if(+x['r:midpointMjdTai']>=od.m0&&+x['r:midpointMjdTai']<=od.m1) use.push(x); });
@@ -350,6 +351,32 @@ function odStart(od){ ODSEED=null; odDraw(); const b=$('odnext'); if(b) b.style.
 function odType(x){ const vsx=fclean(x['f:xm_vsx_Type']), tns=fclean(x['f:xm_tns_fullname']), tt=fclean(x['f:xm_tns_type']), bl=fclean(x['f:xm_x4lac_type'])||fclean(x['f:xm_x3hsp_type']), led=fclean(x['f:xm_mangrove_HyperLEDA_name']), ps=+x['f:xm_legacydr8_pstar'];
  if(tt&&tt!=='AGN'&&tt!=='Varstar'&&tt!=='CV') return 'sn'; if(tt==='AGN'||bl||vsx==='AGN'||vsx==='BLLAC'||vsx==='CV|QSO') return 'agn'; if(vsx||tt==='Varstar'||tt==='CV') return 'var'; if(tns) return 'at'; if(ps>0.5) return 'star'; if(led) return 'gal'; return 'unk'; }
 function odWanted(x){ const t=odType(x); return visible.has(t)||(t==='unk'&&visible.has('glint')); }
+const ABAND={1:'g',2:'r',3:'i',4:'z',5:'y',6:'u'}; let RELAY_OK=null;
+function csvRows(t){ const L=String(t||'').split(/\r?\n/).filter(x=>x.trim()); if(!L.length) return []; const H=L[0].split(',');
+ return L.slice(1).map(l=>{ const v=l.split(','), o={}; H.forEach((h,i)=>o[h]=v[i]); return o; }); }
+async function relayLoad(od,body,ra0,de0,rad,gen){ snote('Loading the alerts of '+nightLabel(od.night)+' in view (ALeRCE)…');
+ const ctl=new AbortController(), tm=setTimeout(()=>ctl.abort(),25000); let rj=null;
+ const finkP=fpost('conesearch',body).catch(()=>null);   // Fink cross-matches (TNS, VSX, Legacy star score...), merged when they arrive
+ try{ const rr=await fetch(SB_URL+'/functions/v1/alerce-tap',{method:'POST',headers:{'Content-Type':'application/json',apikey:SB_KEY},body:JSON.stringify({ra:ra0,dec:de0,radius:rad,mjd_min:od.m0,mjd_max:od.m1}),signal:ctl.signal});
+   clearTimeout(tm); if(!rr.ok) throw new Error('relay HTTP '+rr.status); rj=await rr.json(); if(rj.error) throw new Error(rj.error);
+ }catch(e){ clearTimeout(tm); console.warn('ALeRCE relay unavailable, falling back to Fink:',e); RELAY_OK=false; return 'fail'; }
+ RELAY_OK=true; if(ODN!==od||gen!==CGEN) return 'stale';
+ const cls=new Map(); csvRows(rj.classes).forEach(c=>{ const p=cls.get(c.oid); if(!p||(c.classifier_id==='3'&&p.classifier_id!=='3')) cls.set(c.oid,c); }); const best=new Map(), tb=x=>x==='True'||x==='true';
+ csvRows(rj.detections).forEach(d=>{ const q=(tb(d.isdipole)||tb(d.pixelflags_saturatedcenter))?-1:(+d.snr||0), o=best.get(d.oid); if(!o||q>o.q) best.set(d.oid,{q:q,d:d}); });
+ const build=frows=>{ const fx=new Map((frows||[]).map(x=>[String(x['r:diaObjectId']),x])); clearFink(false); FROWS=new Map(); let n=0;
+   best.forEach((v,oid)=>{ const d=v.d; n++;
+     const x=Object.assign({},fx.get(oid)||{},{'r:diaObjectId':oid,'r:diaSourceId':d.measurement_id,'r:ra':+d.ra,'r:dec':+d.dec,'r:band':ABAND[d.band]||d.band,'r:psfFlux':+d.psfflux,'r:snr':+d.snr,
+       'r:reliability':d.reliability===''?null:+d.reliability,'r:isDipole':tb(d.isdipole),'r:pixelFlags_saturatedCenter':tb(d.pixelflags_saturatedcenter),'r:glint_trail':tb(d.glint_trail),
+       'r:trailLength':+d.traillength||0,'r:midpointMjdTai':+d.mjd,'f:firstDiaSourceMjdTaiFink':+d.firstdiasourcemjdtai});
+     FROWS.set(oid,x); const a=finkObj(x); if(!a) return; const c=cls.get(oid);
+     if(c){ a.alerce=c.class_name+' ('+(+c.probability).toFixed(2)+')'; a.xm=(a.xm?a.xm+' · ':'')+'ALeRCE stamp classifier (beta): '+a.alerce; }
+     a.src='ALeRCE via the Changing Sky relay, alerts of '+nightLabel(od.night); FINKRES.push(a); BYKEY.set(a.key,a); });
+   FCONE={ra:ra0,dec:de0,rad:rad,n:n}; drawFink(); showFinkSummary(); renderListSoon(); odCounts();
+   if(rj.truncated){ const nn=$('conenote'); nn.innerHTML+='<br><span class="sub">Capped at 20,000 detections; zoom in to see them all.</span>'; } };
+ build(null);
+ const nn=$('conenote'); nn.innerHTML+='<br><span class="sub">Adding catalogue matches from Fink…</span>';
+ finkP.then(fr=>{ if(ODN!==od||gen!==CGEN) return; if(fr) build(fr); else { const n2=$('conenote'); n2.innerHTML+='<br><span class="sub">Fink catalogue matches unavailable right now.</span>'; } });
+ return 'ok'; }
 function odCounts(){ const c={}; FINKRES.forEach(a=>c[a.cat]=(c[a.cat]||0)+1); document.querySelectorAll('#cats .cat').forEach(d=>{ const e=d.querySelector('.cnt'); if(e) e.textContent=(c[d.dataset.k]||0).toLocaleString(); }); }
 function selectNights(v){ const stored=NIGHTS.some(n=>n.night===v);
  if(stored){ ODN=null; clearFink(true); odStart(null); return selectStored(v); }

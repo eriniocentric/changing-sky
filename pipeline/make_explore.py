@@ -393,5 +393,37 @@ s = s.replace(m.group(0), r""" let flown=false;
 rep("ensureCat(k).then(()=>{ d.classList.remove('loading'); if(!visible.has(k)) return; if(layers[k]) layers[k].show(); else makeLayer(k); cullAll(); renderList(); }); return; }",
     "if(ODN&&FCONE){ CGEN++; FCONE=null; } ensureCat(k).then(()=>{ d.classList.remove('loading'); if(!visible.has(k)) return; if(layers[k]) layers[k].show(); else makeLayer(k); cullAll(); renderList(); }); return; }")
 
+
+# ---------- 13. past nights via the ALeRCE TAP relay (Supabase edge function), Fink as fallback (added 2026-11-19) ----------
+rep("   const rows=await fpost('conesearch',body); let use=rows;", "   if(od&&RELAY_OK!==false){ const res=await relayLoad(od,body,ra0,de0,rad,gen); if(res==='stale'){ stale=true; return; } if(res==='ok') return; }\n   const rows=await fpost('conesearch',body); let use=rows;")
+rep("'</b> (Fink, '+(ODN?'that night only'", "'</b> ('+(ODN&&RELAY_OK?'ALeRCE via relay, cross-matches from Fink, ':'Fink, ')+(ODN?'that night only'")
+rep("function odCounts(){", r"""const ABAND={1:'g',2:'r',3:'i',4:'z',5:'y',6:'u'}; let RELAY_OK=null;
+function csvRows(t){ const L=String(t||'').split(/\r?\n/).filter(x=>x.trim()); if(!L.length) return []; const H=L[0].split(',');
+ return L.slice(1).map(l=>{ const v=l.split(','), o={}; H.forEach((h,i)=>o[h]=v[i]); return o; }); }
+async function relayLoad(od,body,ra0,de0,rad,gen){ snote('Loading the alerts of '+nightLabel(od.night)+' in view (ALeRCE)…');
+ const ctl=new AbortController(), tm=setTimeout(()=>ctl.abort(),25000); let rj=null;
+ const finkP=fpost('conesearch',body).catch(()=>null);   // Fink cross-matches (TNS, VSX, Legacy star score...), merged when they arrive
+ try{ const rr=await fetch(SB_URL+'/functions/v1/alerce-tap',{method:'POST',headers:{'Content-Type':'application/json',apikey:SB_KEY},body:JSON.stringify({ra:ra0,dec:de0,radius:rad,mjd_min:od.m0,mjd_max:od.m1}),signal:ctl.signal});
+   clearTimeout(tm); if(!rr.ok) throw new Error('relay HTTP '+rr.status); rj=await rr.json(); if(rj.error) throw new Error(rj.error);
+ }catch(e){ clearTimeout(tm); console.warn('ALeRCE relay unavailable, falling back to Fink:',e); RELAY_OK=false; return 'fail'; }
+ RELAY_OK=true; if(ODN!==od||gen!==CGEN) return 'stale';
+ const cls=new Map(); csvRows(rj.classes).forEach(c=>{ const p=cls.get(c.oid); if(!p||(c.classifier_id==='3'&&p.classifier_id!=='3')) cls.set(c.oid,c); }); const best=new Map(), tb=x=>x==='True'||x==='true';
+ csvRows(rj.detections).forEach(d=>{ const q=(tb(d.isdipole)||tb(d.pixelflags_saturatedcenter))?-1:(+d.snr||0), o=best.get(d.oid); if(!o||q>o.q) best.set(d.oid,{q:q,d:d}); });
+ const build=frows=>{ const fx=new Map((frows||[]).map(x=>[String(x['r:diaObjectId']),x])); clearFink(false); FROWS=new Map(); let n=0;
+   best.forEach((v,oid)=>{ const d=v.d; n++;
+     const x=Object.assign({},fx.get(oid)||{},{'r:diaObjectId':oid,'r:diaSourceId':d.measurement_id,'r:ra':+d.ra,'r:dec':+d.dec,'r:band':ABAND[d.band]||d.band,'r:psfFlux':+d.psfflux,'r:snr':+d.snr,
+       'r:reliability':d.reliability===''?null:+d.reliability,'r:isDipole':tb(d.isdipole),'r:pixelFlags_saturatedCenter':tb(d.pixelflags_saturatedcenter),'r:glint_trail':tb(d.glint_trail),
+       'r:trailLength':+d.traillength||0,'r:midpointMjdTai':+d.mjd,'f:firstDiaSourceMjdTaiFink':+d.firstdiasourcemjdtai});
+     FROWS.set(oid,x); const a=finkObj(x); if(!a) return; const c=cls.get(oid);
+     if(c){ a.alerce=c.class_name+' ('+(+c.probability).toFixed(2)+')'; a.xm=(a.xm?a.xm+' · ':'')+'ALeRCE stamp classifier (beta): '+a.alerce; }
+     a.src='ALeRCE via the Changing Sky relay, alerts of '+nightLabel(od.night); FINKRES.push(a); BYKEY.set(a.key,a); });
+   FCONE={ra:ra0,dec:de0,rad:rad,n:n}; drawFink(); showFinkSummary(); renderListSoon(); odCounts();
+   if(rj.truncated){ const nn=$('conenote'); nn.innerHTML+='<br><span class="sub">Capped at 20,000 detections; zoom in to see them all.</span>'; } };
+ build(null);
+ const nn=$('conenote'); nn.innerHTML+='<br><span class="sub">Adding catalogue matches from Fink…</span>';
+ finkP.then(fr=>{ if(ODN!==od||gen!==CGEN) return; if(fr) build(fr); else { const n2=$('conenote'); n2.innerHTML+='<br><span class="sub">Fink catalogue matches unavailable right now.</span>'; } });
+ return 'ok'; }
+function odCounts(){""")
+
 open(dst, 'w', encoding='utf-8').write(s)
 print('wrote', dst, len(s))
