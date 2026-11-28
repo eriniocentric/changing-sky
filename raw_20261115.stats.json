@@ -1,0 +1,1 @@
+{"night": "20261115", "cells_queried": 386, "cells_with_alerts": 205, "cells_failed": 0, "objects": 93981, "objects_with_later_alert": 0, "seconds": 1160, "truncated": false, "fink_objects": 93988, "fink_alerts": 138867, "fink_sso": 30900, "coverage_vs_fink_objects": 0.9999}
